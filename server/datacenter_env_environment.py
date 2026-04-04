@@ -25,7 +25,7 @@ from models import (
     ZoneObservation,
     ZoneAdjustment,
 )
-from datacenter_env.server.simulation import FacilityState, build_easy_scenario
+from simulation import FacilityState, build_easy_scenario
 from grader_easy import EasyGraderState, compute_step_reward, compute_final_score
 
 # ── Task configuration ─────────────────────────────────────────────────────────
