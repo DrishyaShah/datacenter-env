@@ -1,0 +1,2 @@
+[console_scripts]
+server = datacenter_env.server.app:main

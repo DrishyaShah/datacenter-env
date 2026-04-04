@@ -1,0 +1,78 @@
+# openenv.yaml — single YAML combining metadata + runtime
+spec_version: 1
+name: dc-openenv
+version: "1.0.0"
+description: >
+  Data Centre Operations Environment. An LLM agent acts as a junior data centre
+  engineer making cooling decisions. Simulates thermal physics with structured
+  JSON state including sensor readings, maintenance logs, and business context.
+author: dc-openenv-team
+license: MIT
+
+# ── Runtime / server spec ───────────────────────────────
+type: space
+runtime: fastapi
+app: server.app:app   # points to your FastAPI instance
+port: 8000
+server:
+  base_url: "http://localhost:8000"
+  health_endpoint: "/health"
+  reset_endpoint: "/reset"
+  step_endpoint: "/step"
+  state_endpoint: "/state"
+
+# ── Observation / Action / Reward ───────────────────────
+observation_space:
+  type: object
+  fields:
+    - name: step
+      type: integer
+    - name: timestamp_hour
+      type: float
+    - name: outside_temp_c
+      type: float
+    - name: chiller_active
+      type: boolean
+    - name: chiller_cop
+      type: float
+    - name: grid_carbon_intensity
+      type: string
+      enum: [low, medium, high, critical_high]
+    - name: current_pue
+      type: float
+    - name: zones
+      type: array
+    - name: maintenance_notes
+      type: array
+    - name: upcoming_events
+      type: array
+
+action_space:
+  type: object
+  fields:
+    - name: zone_adjustments
+      type: array
+    - name: reasoning
+      type: string
+
+reward:
+  range: [-1.0, 1.0]
+  per_step: true
+
+# ── Tasks ──────────────────────────────────────────────
+tasks:
+  - id: easy-single-zone
+    name: Single-Zone Temperature Control
+    difficulty: easy
+    description: >
+      Keep one server room zone in safe temperature range (18-27C)
+      while minimizing PUE. Zone starts overheated at 28.5C with fan at 60%.
+    max_steps: 12
+    success_threshold: 0.6
+# spec_version: 1
+# name: datacenter_env
+# type: space
+# runtime: fastapi
+# app: server.app:app
+# port: 8000
+
