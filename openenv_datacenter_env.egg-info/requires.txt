@@ -1,5 +1,0 @@
-openenv-core[core]>=0.2.2
-
-[dev]
-pytest>=8.0.0
-pytest-cov>=4.0.0
