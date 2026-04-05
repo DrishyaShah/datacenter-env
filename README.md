@@ -1,8 +1,8 @@
 ---
-title: Datacenter Env Environment Server
-emoji: 🥋
-colorFrom: yellow
-colorTo: purple
+title: DC OpenEnv — Data Centre Cooling
+emoji: 🏢
+colorFrom: blue
+colorTo: green
 sdk: docker
 pinned: false
 app_port: 8000
@@ -11,245 +11,138 @@ tags:
   - openenv
 ---
 
-# Datacenter Env Environment
+# DC OpenEnv (dc-openenv)
 
-A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.
+OpenEnv environment for **data centre cooling control**: multi-zone thermal dynamics, PUE, carbon-aware signals, and programmatic graders on three difficulty levels. Agents act each step on **fan speeds**, **per-zone supply air setpoints**, and **facility chiller** settings; observations include zone sensors, weather, history, and SLA streaks.
 
-## Quick Start
+## Action space (`DCAction`)
 
-The simplest way to use the Datacenter Env environment is through the `DatacenterEnv` class:
+Defined in [`server/models.py`](server/models.py):
 
-```python
-from datacenter_env import DatacenterAction, DatacenterEnv
+- **`zone_adjustments`**: list of per-zone controls — `zone_id`, `fan_speed_pct` [0, 100], `supply_air_temp_setpoint_c` [16, 26].
+- **`chiller_setpoint_c`**: [6, 15] °C.
+- **`chiller_active`**: bool.
+- **`reasoning`**: optional string (used by the hard-task grader).
 
-try:
-    # Create environment from Docker image
-    datacenter_envenv = DatacenterEnv.from_docker_image("datacenter_env-env:latest")
+## Observation space (`DCObservation`)
 
-    # Reset
-    result = datacenter_envenv.reset()
-    print(f"Reset: {result.observation.echoed_message}")
+Facility-wide fields (time, outdoor temps, chiller state/COP/fault flag, PUE, carbon labels, load phase) plus **`zones`** as `ZoneObservation` records (temperatures, load, humidity, sensor confidence, priority, forecast). Includes a **3-step history** buffer, **SLA violation streak**, and maintenance/event hints.
 
-    # Send multiple messages
-    messages = ["Hello, World!", "Testing echo", "Final message"]
+## Tasks and graders
 
-    for msg in messages:
-        result = datacenter_envenv.step(DatacenterAction(message=msg))
-        print(f"Sent: '{msg}'")
-        print(f"  → Echoed: '{result.observation.echoed_message}'")
-        print(f"  → Length: {result.observation.message_length}")
-        print(f"  → Reward: {result.reward}")
+| Task ID | Difficulty | Max steps | Description |
+|---------|------------|-----------|-------------|
+| `easy-single-zone` | easy | 48 | Single-zone thermal runaway recovery |
+| `medium-multi-zone` | medium | 144 | Multi-zone surge with faulty sensor |
+| `hard-cascading-failure` | hard | 288 | Cascading chiller failure + carbon-aware triage |
 
-finally:
-    # Always clean up
-    datacenter_envenv.close()
-```
+Step rewards are shaped in roughly **[-1, 1]**; each grader exposes **`final_score()` in [0, 1]** at episode end.
 
-That's it! The `DatacenterEnv.from_docker_image()` method handles:
-- Starting the Docker container
-- Waiting for the server to be ready
-- Connecting to the environment
-- Container cleanup when you call `close()`
-
-## Building the Docker Image
-
-Before using the environment, you need to build the Docker image:
+## Setup
 
 ```bash
-# From project root
-docker build -t datacenter_env-env:latest -f server/Dockerfile .
+cd /path/to/datacenter-env
+uv sync
+# optional: dev tools (pytest)
+uv sync --extra dev
 ```
 
-## Deploying to Hugging Face Spaces
-
-You can easily deploy your OpenEnv environment to Hugging Face Spaces using the `openenv push` command:
+Run the API server locally:
 
 ```bash
-# From the environment directory (where openenv.yaml is located)
-openenv push
-
-# Or specify options
-openenv push --namespace my-org --private
+uv run server
+# or
+uvicorn server.app:app --host 0.0.0.0 --port 8000
 ```
 
-The `openenv push` command will:
-1. Validate that the directory is an OpenEnv environment (checks for `openenv.yaml`)
-2. Prepare a custom build for Hugging Face Docker space (enables web interface)
-3. Upload to Hugging Face (ensuring you're logged in)
+## Docker (submission / HF)
 
-### Prerequisites
-
-- Authenticate with Hugging Face: The command will prompt for login if not already authenticated
-
-### Options
-
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
-- `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
-- `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
-- `--private`: Deploy the space as private (default: public)
-
-### Examples
+Build from the **repository root** (required for full `pyproject.toml` + `uv.lock` context):
 
 ```bash
-# Push to your personal namespace (defaults to username/env-name from openenv.yaml)
-openenv push
-
-# Push to a specific repository
-openenv push --repo-id my-org/my-env
-
-# Push with a custom base image
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
-
-# Push as a private space
-openenv push --private
-
-# Combine options
-openenv push --repo-id my-org/my-env --base-image custom-base:latest --private
+docker build -t dc-openenv:latest .
+docker run --rm -p 8000:8000 dc-openenv:latest
 ```
 
-After deployment, your space will be available at:
-`https://huggingface.co/spaces/<repo-id>`
+Health: `GET http://localhost:8000/health` — Reset: `POST http://localhost:8000/reset` with JSON body `{}`.
 
-The deployed space includes:
-- **Web Interface** at `/web` - Interactive UI for exploring the environment
-- **API Documentation** at `/docs` - Full OpenAPI/Swagger interface
-- **Health Check** at `/health` - Container health monitoring
-- **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
-
-## Environment Details
-
-### Action
-**DatacenterAction**: Contains a single field
-- `message` (str) - The message to echo back
-
-### Observation
-**DatacenterObservation**: Contains the echo response and metadata
-- `echoed_message` (str) - The message echoed back
-- `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
-
-### Reward
-The reward is calculated as: `message_length × 0.1`
-- "Hi" → reward: 0.2
-- "Hello, World!" → reward: 1.3
-- Empty message → reward: 0.0
-
-## Advanced Usage
-
-### Connecting to an Existing Server
-
-If you already have a Datacenter Env environment server running, you can connect directly:
-
-```python
-from datacenter_env import DatacenterEnv
-
-# Connect to existing server
-datacenter_envenv = DatacenterEnv(base_url="<ENV_HTTP_URL_HERE>")
-
-# Use as normal
-result = datacenter_envenv.reset()
-result = datacenter_envenv.step(DatacenterAction(message="Hello!"))
-```
-
-Note: When connecting to an existing server, `datacenter_envenv.close()` will NOT stop the server.
-
-### Using the Context Manager
-
-The client supports context manager usage for automatic connection management:
-
-```python
-from datacenter_env import DatacenterAction, DatacenterEnv
-
-# Connect with context manager (auto-connects and closes)
-with DatacenterEnv(base_url="http://localhost:8000") as env:
-    result = env.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-    # Multiple steps with low latency
-    for msg in ["Hello", "World", "!"]:
-        result = env.step(DatacenterAction(message=msg))
-        print(f"Echoed: {result.observation.echoed_message}")
-```
-
-The client uses WebSocket connections for:
-- **Lower latency**: No HTTP connection overhead per request
-- **Persistent session**: Server maintains your environment state
-- **Efficient for episodes**: Better for many sequential steps
-
-### Concurrent WebSocket Sessions
-
-The server supports multiple concurrent WebSocket connections. To enable this,
-modify `server/app.py` to use factory mode:
-
-```python
-# In server/app.py - use factory mode for concurrent sessions
-app = create_app(
-    DatacenterEnvironment,  # Pass class, not instance
-    DatacenterAction,
-    DatacenterObservation,
-    max_concurrent_envs=4,  # Allow 4 concurrent sessions
-)
-```
-
-Then multiple clients can connect simultaneously:
-
-```python
-from datacenter_env import DatacenterAction, DatacenterEnv
-from concurrent.futures import ThreadPoolExecutor
-
-def run_episode(client_id: int):
-    with DatacenterEnv(base_url="http://localhost:8000") as env:
-        result = env.reset()
-        for i in range(10):
-            result = env.step(DatacenterAction(message=f"Client {client_id}, step {i}"))
-        return client_id, result.observation.message_length
-
-# Run 4 episodes concurrently
-with ThreadPoolExecutor(max_workers=4) as executor:
-    results = list(executor.map(run_episode, range(4)))
-```
-
-## Development & Testing
-
-### Direct Environment Testing
-
-Test the environment logic directly without starting the HTTP server:
+## OpenEnv CLI
 
 ```bash
-# From the server directory
-python3 server/datacenter_env_environment.py
+pip install openenv-core   # or use project venv
+openenv validate           # run from repo root — should report [OK]
 ```
 
-This verifies that:
-- Environment resets correctly
-- Step executes actions properly
-- State tracking works
-- Rewards are calculated correctly
+## Baseline inference (`inference.py`)
 
-### Running Locally
+Root-level script using the **OpenAI** Python client against an OpenAI-compatible endpoint.
 
-Run the server locally for development:
+**Environment variables**
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `HF_TOKEN` or `OPENAI_API_KEY` | Yes | API key |
+| `API_BASE_URL` | No | Default: Groq OpenAI-compatible URL |
+| `MODEL_NAME` | No | Default model id |
+| `INFERENCE_MAX_STEPS_PER_TASK` | No | Cap steps per task (faster smoke runs, &lt;20 min total) |
+| `VERBOSE` | No | `1` to print extra `[INFO]` / `[SCORE]` lines |
+
+**Strict stdout protocol** (2 decimal places for `reward`, `score`, and `rewards` CSV):
+
+```text
+[START] task=<id> env=dc-openenv model=<model>
+[STEP] step=<n> action=<json> reward=<0.00> done=<true|false> error=<str|null>
+[END] success=<true|false> steps=<n> score=<0.00> rewards=<r1>,<r2>,...
+```
+
+By default only these lines are printed (no `[INFO]` noise). Example:
 
 ```bash
-uvicorn server.app:app --reload
+export HF_TOKEN=...
+export API_BASE_URL=https://api.groq.com/openai/v1
+export MODEL_NAME=llama-3.3-70b-versatile
+uv run python inference.py
 ```
 
-## Project Structure
+## Tests
 
+```bash
+uv sync --extra dev
+uv run pytest tests/ -q
 ```
-datacenter_env/
-├── .dockerignore         # Docker build exclusions
-├── __init__.py            # Module exports
-├── README.md              # This file
-├── openenv.yaml           # OpenEnv manifest
-├── pyproject.toml         # Project metadata and dependencies
-├── uv.lock                # Locked dependencies (generated)
-├── client.py              # DatacenterEnv client
-├── models.py              # Action and Observation models
-└── server/
-    ├── __init__.py        # Server module exports
-    ├── datacenter_env_environment.py  # Core environment logic
-    ├── app.py             # FastAPI application (HTTP + WebSocket endpoints)
-    └── Dockerfile         # Container image definition
-```
+
+## Baseline scores (fill after your run)
+
+| Task | Model | Final score [0,1] |
+|------|-------|-------------------|
+| easy-single-zone | | |
+| medium-multi-zone | | |
+| hard-cascading-failure | | |
+
+## Hackathon submission checklist
+
+1. **HF Space** deployed (tagged `openenv`), secrets: `HF_TOKEN`, `API_BASE_URL`, `MODEL_NAME` as required by organizers.
+2. **`POST <space-url>/reset`** with `{}` returns **HTTP 200**.
+3. **`docker build`** from **this repo root** succeeds.
+4. **`openenv validate`** from repo root passes.
+5. **`python inference.py`** (or `uv run python inference.py`) completes without error with keys set.
+6. Run the organizer **pre-validation script** (ping URL + docker build + `openenv validate`), e.g.:
+
+   ```bash
+   ./scripts/validate-submission.sh https://YOUR-SPACE.hf.space /path/to/datacenter-env
+   ```
+
+## Project layout
+
+- [`openenv.yaml`](openenv.yaml) — manifest + runtime (`server.app:app`, port 8000)
+- [`server/app.py`](server/app.py) — FastAPI app via `create_app`
+- [`server/environment.py`](server/environment.py) — `DCEnvironment` (reset / step / state)
+- [`server/simulation.py`](server/simulation.py) — physics
+- [`server/scenarios/`](server/scenarios/) — task initial conditions
+- [`server/graders/`](server/graders/) — per-task scoring
+- [`server/client.py`](server/client.py) — `DCEnv` HTTP/WebSocket client
+- [`inference.py`](inference.py) — LLM baseline
+
+## License
+
+See `LICENSE` in the repository (BSD-style header in several files).

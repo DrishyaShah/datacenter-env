@@ -19,7 +19,7 @@ Hard termination: any zone unsafe for 3+ consecutive steps → episode ends.
 """
 
 import math
-from simulation import (
+from ..simulation import (
     FacilityState,
     ZoneState,
     PRIORITY_LOW,

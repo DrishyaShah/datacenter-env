@@ -1,117 +1,162 @@
 """
 Grader for Task 1 (Easy): Single-zone thermal runaway recovery.
 
-Scoring criteria (deterministic, reproducible):
-  - Temperature compliance: zone must stay in [18, 27] C
-  - PUE improvement: reward relative to PID baseline (NOT vs zero-cooling)
-  - Stability bonus: sustained compliance across multiple steps
+Interface contract (must match environment.py):
+  - EasyGraderState() is instantiated by environment on reset()
+  - grader.step(grader_input: dict) -> (float, DCReward)  called every step
+  - grader.final_score() -> float                          called at episode end
 
-FIX: PUE score is now benchmarked against PID_BASELINE_PUE (the PUE a simple
-proportional controller achieves on this scenario). Previously it was measured
-against zero-cooling which gave a perfect PUE score to agents that did nothing.
+grader_input keys (provided by environment._build_grader_input):
+  step, zones, current_pue, pid_baseline_pue,
+  carbon_intensity_normalized, carbon_intensity_label,
+  chiller_active, chiller_setpoint_c, sla_violation_streak,
+  action, last_action, action_clipped, reasoning
 
-Score is always in [0.0, 1.0].
+Scoring criteria (deterministic, reproducible, 0.0–1.0):
+  60% — fraction of steps where cold_aisle_temp ∈ [18, 27] °C
+  40% — average PUE improvement vs pid_baseline_pue (NOT vs zero-cooling)
 """
 
-from typing import List
-from dataclasses import dataclass, field
+from typing import Any, Dict, List, Tuple
 
-TEMP_MIN     = 18.0
-TEMP_MAX     = 27.0
-TEMP_IDEAL   = 22.0
+from ..models import DCReward
 
-# PUE a simple proportional (PID) controller achieves on the easy scenario.
-# Pre-computed by running pid_baseline.py on build_easy_scenario(seed=0..99).
-# Average PID PUE on this scenario ≈ 1.55 (fan ~70%, chiller active at 10C setpoint).
-# An agent must beat THIS to earn PUE reward, not beat zero-cooling.
-PID_BASELINE_PUE = 1.55
 
-# Best physically achievable PUE on this scenario (fan ~40%, chiller optimised).
+# ── Constants ──────────────────────────────────────────────────────────────────
+
+TEMP_MIN   = 18.0
+TEMP_MAX   = 27.0
+TEMP_IDEAL = 22.0
+
+# Best physically achievable PUE on the easy scenario.
+# PUE reward is measured against pid_baseline_pue supplied per-step from
+# the facility (pre-computed at scenario build time), not against this constant.
+# This is kept only as a floor for normalisation.
 IDEAL_PUE = 1.18
 
-MAX_STEPS = 48
 
+# ── Grader class ───────────────────────────────────────────────────────────────
 
-@dataclass
 class EasyGraderState:
-    steps_in_range:  int         = 0
-    steps_total:     int         = 0
-    pue_readings:    List[float] = field(default_factory=list)
-    temp_readings:   List[float] = field(default_factory=list)
-    consecutive_safe: int        = 0   # current streak of in-range steps
-
-
-def compute_step_reward(
-    zone_temp:     float,
-    current_pue:   float,
-    grader_state:  EasyGraderState,
-) -> tuple:
     """
-    Returns (reward: float, detail: dict).
-    Reward is in [-1.0, +1.0] per step.
+    Stateful grader for the easy-single-zone task.
+
+    Instantiated fresh on every reset(). Accumulates per-step metrics
+    and produces a final score in [0.0, 1.0] at episode end.
     """
-    grader_state.steps_total    += 1
-    grader_state.pue_readings.append(current_pue)
-    grader_state.temp_readings.append(zone_temp)
 
-    # ── Temperature component ─────────────────────────────────────────────────
-    in_range = TEMP_MIN <= zone_temp <= TEMP_MAX
+    def __init__(self):
+        self.steps_in_range:   int         = 0
+        self.steps_total:      int         = 0
+        self.pue_readings:     List[float] = []
+        self.temp_readings:    List[float] = []
+        self.consecutive_safe: int         = 0
 
-    if in_range:
-        grader_state.steps_in_range  += 1
-        grader_state.consecutive_safe += 1
-        closeness   = 1.0 - abs(zone_temp - TEMP_IDEAL) / 5.0
-        temp_reward = 0.40 + 0.10 * closeness
-        # Small stability bonus for sustained streaks
-        streak_bonus = 0.05 * min(grader_state.consecutive_safe / 10.0, 1.0)
-        temp_reward  = min(0.55, temp_reward + streak_bonus)
-    else:
-        grader_state.consecutive_safe = 0
-        overshoot  = max(0.0, zone_temp - TEMP_MAX)
-        undershoot = max(0.0, TEMP_MIN - zone_temp)
-        violation  = overshoot + undershoot
-        temp_reward = -0.30 * min(violation / 3.0, 1.0)
+    # ── Step interface (called by environment.step()) ──────────────────────────
 
-    # ── PUE component (FIX: benchmarked against PID baseline) ─────────────────
-    # positive when agent beats PID; negative when agent is worse than PID
-    pue_range     = PID_BASELINE_PUE - IDEAL_PUE          # e.g. 1.55 - 1.18 = 0.37
-    pue_vs_pid    = (PID_BASELINE_PUE - current_pue) / pue_range
-    pue_vs_pid    = max(-1.0, min(1.0, pue_vs_pid))
-    pue_reward    = 0.35 * pue_vs_pid
+    def step(self, grader_input: Dict[str, Any]) -> Tuple[float, DCReward]:
+        """
+        Compute per-step reward from grader_input dict.
 
-    total = round(temp_reward + pue_reward, 4)
-    total = max(-1.0, min(1.0, total))
+        Returns
+        -------
+        (total_reward: float, reward_detail: DCReward)
+        """
+        self.steps_total += 1
 
-    detail = {
-        "temp_reward":  round(temp_reward, 4),
-        "pue_reward":   round(pue_reward,  4),
-        "in_range":     in_range,
-        "pue":          round(current_pue, 4),
-        "zone_temp":    round(zone_temp,   2),
-        "pue_vs_pid":   round(pue_vs_pid,  4),
-    }
-    return total, detail
+        current_pue      = grader_input["current_pue"]
+        pid_baseline_pue = grader_input.get("pid_baseline_pue", 1.55)
 
+        # Easy task: always single zone — take first zone
+        zones = grader_input["zones"]
+        zone  = zones[0] if zones else {}
 
-def compute_final_score(grader_state: EasyGraderState) -> float:
-    """
-    Final episode score in [0.0, 1.0].
+        zone_temp        = zone.get("temp_c", 30.0)
+        consecutive_safe = zone.get("consecutive_safe", self.consecutive_safe)
 
-    Breakdown:
-      60% — fraction of steps where temperature was in safe range [18, 27] C
-      40% — average PUE improvement vs PID baseline (not vs zero-cooling)
-    """
-    if grader_state.steps_total == 0:
-        return 0.0
+        self.pue_readings.append(current_pue)
+        self.temp_readings.append(zone_temp)
 
-    # Temperature compliance fraction
-    compliance = grader_state.steps_in_range / grader_state.steps_total
+        # ── Temperature reward ─────────────────────────────────────────────────
+        in_range = TEMP_MIN <= zone_temp <= TEMP_MAX
 
-    # Average PUE vs PID baseline
-    avg_pue   = sum(grader_state.pue_readings) / len(grader_state.pue_readings)
-    pue_range = PID_BASELINE_PUE - IDEAL_PUE
-    pue_score = (PID_BASELINE_PUE - avg_pue) / pue_range
-    pue_score = max(0.0, min(1.0, pue_score))
+        if in_range:
+            self.steps_in_range  += 1
+            self.consecutive_safe = consecutive_safe
+            closeness    = 1.0 - abs(zone_temp - TEMP_IDEAL) / 5.0
+            temp_reward  = 0.40 + 0.10 * closeness
+            # Compounding stability bonus for sustained streaks
+            streak_bonus = 0.05 * min(self.consecutive_safe / 10.0, 1.0)
+            temp_reward  = min(0.55, temp_reward + streak_bonus)
+        else:
+            self.consecutive_safe = 0
+            overshoot   = max(0.0, zone_temp - TEMP_MAX)
+            undershoot  = max(0.0, TEMP_MIN - zone_temp)
+            violation   = overshoot + undershoot
+            temp_reward = -0.30 * min(violation / 3.0, 1.0)
 
-    score = 0.60 * compliance + 0.40 * pue_score
-    return round(score, 4)
+        # ── PUE reward (vs PID baseline, not vs zero-cooling) ─────────────────
+        pue_range  = max(pid_baseline_pue - IDEAL_PUE, 0.01)   # avoid div/0
+        pue_vs_pid = (pid_baseline_pue - current_pue) / pue_range
+        pue_vs_pid = max(-1.0, min(1.0, pue_vs_pid))
+        pue_reward = 0.35 * pue_vs_pid
+
+        # ── Carbon signal (light penalty, easy task doesn't heavily weight it) ─
+        carbon = grader_input.get("carbon_intensity_normalized", 0.5)
+        # Approximate cooling power from PUE and IT load
+        total_it_kw = sum(z.get("it_load_kw", 0.0) for z in zones)
+        cooling_power_est = max(0.0, (current_pue - 1.0) * total_it_kw)
+        carbon_reward = -0.05 * (cooling_power_est / max(total_it_kw, 1.0)) * carbon
+
+        # ── Total ──────────────────────────────────────────────────────────────
+        total = round(
+            max(-1.0, min(1.0, temp_reward + pue_reward + carbon_reward)), 4
+        )
+
+        reward_detail = DCReward(
+            total=total,
+            temp_reward=round(temp_reward, 4),
+            pue_reward=round(pue_reward, 4),
+            carbon_reward=round(carbon_reward, 4),
+            safety_penalty=0.0,
+            roughness_penalty=0.0,
+            stability_bonus=round(
+                0.05 * min(self.consecutive_safe / 10.0, 1.0) if in_range else 0.0, 4
+            ),
+            temperature_penalty=round(min(0.0, temp_reward), 4),
+            humidity_penalty=0.0,
+            breakdown={
+                "temp_reward":   round(temp_reward, 4),
+                "pue_reward":    round(pue_reward, 4),
+                "carbon_reward": round(carbon_reward, 4),
+                "in_range":      float(in_range),
+                "pue":           round(current_pue, 4),
+                "pue_vs_pid":    round(pue_vs_pid, 4),
+                "zone_temp":     round(zone_temp, 2),
+            },
+        )
+
+        return total, reward_detail
+
+    # ── Final score (called by inference.py after episode ends) ───────────────
+
+    def final_score(self) -> float:
+        """
+        Final episode score in [0.0, 1.0].
+
+        60% — temperature compliance fraction
+        40% — average PUE improvement vs pid_baseline_pue
+        """
+        if self.steps_total == 0:
+            return 0.0
+
+        compliance = self.steps_in_range / self.steps_total
+
+        avg_pue      = sum(self.pue_readings) / len(self.pue_readings)
+        # Use the first pid_baseline_pue seen; fall back to 1.55 if not recorded
+        pid_ref      = getattr(self, "_pid_baseline_pue", 1.55)
+        pue_range    = max(pid_ref - IDEAL_PUE, 0.01)
+        pue_score    = (pid_ref - avg_pue) / pue_range
+        pue_score    = max(0.0, min(1.0, pue_score))
+
+        return round(0.60 * compliance + 0.40 * pue_score, 4)

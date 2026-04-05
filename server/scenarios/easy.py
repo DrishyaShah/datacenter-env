@@ -12,7 +12,7 @@ Episode: 48 steps × 5 min = 4 hours of simulated time.
 Start time: 14:00 (peak carbon / peak outside temperature).
 """
 
-from simulation import (
+from ..simulation import (
     FacilityState,
     ZoneState,
     PRIORITY_MEDIUM,

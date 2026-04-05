@@ -28,7 +28,7 @@ Start time: 00:00 — full diurnal cycle.
 """
 
 import math
-from simulation import (
+from ..simulation import (
     FacilityState,
     ZoneState,
     PRIORITY_LOW,

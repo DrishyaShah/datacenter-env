@@ -239,7 +239,7 @@ class DCReward(BaseModel):
         description="Penalty for humidity violations (≤0)"
     )
 
-    breakdown: Dict[str, float] = Field(
+    breakdown: Dict[str, Any] = Field(
         default_factory=dict,
         description="Per-zone or per-component reward detail for debugging"
     )

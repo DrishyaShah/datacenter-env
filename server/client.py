@@ -20,7 +20,9 @@ class DCEnv(EnvClient[DCAction, DCObservation, State]):
         Convert DCAction to JSON payload for environment step call.
         """
         return {
-            "zone_adjustments": action.zone_adjustments,
+            "zone_adjustments": [z.model_dump() for z in action.zone_adjustments],
+            "chiller_setpoint_c": action.chiller_setpoint_c,
+            "chiller_active": action.chiller_active,
             "reasoning": action.reasoning,
         }
 

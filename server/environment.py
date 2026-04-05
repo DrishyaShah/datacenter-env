@@ -19,7 +19,7 @@ from typing import Any, Deque, Dict, List, Optional
 
 from openenv.core.env_server.interfaces import Environment
 
-from models import (
+from .models import (
     DCAction,
     DCObservation,
     DCReward,
@@ -28,17 +28,17 @@ from models import (
     ZoneAdjustment,
     ZoneObservation,
 )
-from simulation import (
+from .simulation import (
     DCAction as SimDCAction,
     FacilityState,
     ZoneAdjustment as SimZoneAdjustment,
 )
-from scenarios.easy import build_easy_scenario
-from scenarios.medium import build_medium_scenario
-from scenarios.hard import build_hard_scenario
-from grader_easy import EasyGrader
-from grader_medium import MediumGrader
-from grader_hard import HardGrader
+from .scenarios.easy import build_easy_scenario
+from .scenarios.medium import build_medium_scenario
+from .scenarios.hard import build_hard_scenario
+from .graders.grader_easy import EasyGraderState
+from .graders.grader_medium import MediumGrader
+from .graders.grader_hard import HardGrader
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -58,13 +58,22 @@ HISTORY_BUFFER_DEPTH = 3
 CHILLER_FAULT_COP_FRACTION = 0.60
 
 
+def _reward_detail_as_dict(detail: Any) -> Dict[str, Any]:
+    """Graders may return either a dict or a DCReward instance."""
+    if isinstance(detail, DCReward):
+        return detail.model_dump()
+    if isinstance(detail, dict):
+        return detail
+    return {}
+
+
 # ── Task registry ─────────────────────────────────────────────────────────────
 
 TASK_CONFIGS: Dict[str, Dict[str, Any]] = {
     "easy-single-zone": {
         "max_steps": 48,
         "scenario_builder": build_easy_scenario,
-        "grader_class": EasyGrader,
+        "grader_class": EasyGraderState,
         "description": "Single-zone thermal runaway recovery under steady load",
         "hard_termination": False,
     },
@@ -196,7 +205,8 @@ class DCEnvironment(Environment):
 
         # Compute reward via grader
         grader_input = self._build_grader_input(action, step_info)
-        step_reward, reward_detail = self._grader.step(grader_input)
+        step_reward, raw_reward_detail = self._grader.step(grader_input)
+        reward_detail = _reward_detail_as_dict(raw_reward_detail)
 
         if terminated_early:
             step_reward = terminal_score
@@ -205,6 +215,10 @@ class DCEnvironment(Environment):
             self._done = True
 
         self._episode_rewards.append(step_reward)
+
+        bd = reward_detail.get("breakdown")
+        if not isinstance(bd, dict):
+            bd = reward_detail
 
         reward_model = DCReward(
             total=step_reward,
@@ -217,7 +231,7 @@ class DCEnvironment(Environment):
             # Legacy fields
             temperature_penalty=reward_detail.get("safety_penalty", 0.0),
             humidity_penalty=0.0,
-            breakdown=reward_detail,
+            breakdown=bd,
         )
 
         info: Dict[str, Any] = {

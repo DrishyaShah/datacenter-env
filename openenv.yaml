@@ -1,4 +1,4 @@
-# openenv.yaml — single YAML combining metadata + runtime
+# OpenEnv manifest — DC cooling environment (V2)
 name: dc-openenv
 version: "2.0.0"
 description: >
@@ -14,6 +14,11 @@ tags:
   - energy-efficiency
   - carbon-aware
   - safety-constrained
+
+runtime: fastapi
+app: server.app:app
+port: 8000
+
 tasks:
   - id: easy-single-zone
     difficulty: easy
@@ -27,28 +32,33 @@ tasks:
     difficulty: hard
     max_steps: 288
     description: "Cascading chiller failure with carbon-aware triage"
+
 action_space:
   type: structured
+  description: >
+    Per-step DCAction: zone_adjustments (list) plus facility chiller controls.
   fields:
-    - name: fan_speed_pct
-      type: float
-      range: [0, 100]
-    - name: supply_air_temp_setpoint_c
-      type: float
-      range: [16, 26]
+    - name: zone_adjustments
+      type: list
+      description: >
+        One entry per zone; each item has zone_id (str), fan_speed_pct [0,100],
+        supply_air_temp_setpoint_c [16,26].
     - name: chiller_setpoint_c
       type: float
       range: [6, 15]
+      description: "Facility chilled-water setpoint (°C)"
     - name: chiller_active
       type: bool
+      description: "Chiller on/off"
+    - name: reasoning
+      type: string
+      optional: true
+      description: "Optional explanation (graded on hard task)"
+
 observation_space:
   type: structured
-  description: "Per-zone sensor readings + facility state + 3-step history buffer"
-reward_range: [-1.0, 1.0]
-# spec_version: 1
-# name: datacenter_env
-# type: space
-# runtime: fastapi
-# app: server.app:app
-# port: 8000
+  description: >
+    DCObservation: time, weather, chiller state, PUE, carbon labels, per-zone
+    ZoneObservation fields, 3-step history buffer, SLA streak, maintenance hints.
 
+reward_range: [-1.0, 1.0]
