@@ -1,74 +1,50 @@
 # openenv.yaml — single YAML combining metadata + runtime
-spec_version: 1
 name: dc-openenv
-version: "1.0.0"
+version: "2.0.0"
 description: >
-  Data Centre Operations Environment. An LLM agent acts as a junior data centre
-  engineer making cooling decisions. Simulates thermal physics with structured
-  JSON state including sensor readings, maintenance logs, and business context.
-author: dc-openenv-team
-license: MIT
-
-# ── Runtime / server spec ───────────────────────────────
-type: space
-runtime: fastapi
-app: server.app:app   # points to your FastAPI instance
-port: 8000
-server:
-  base_url: "http://localhost:8000"
-  health_endpoint: "/health"
-  reset_endpoint: "/reset"
-  step_endpoint: "/step"
-  state_endpoint: "/state"
-
-# ── Observation / Action / Reward ───────────────────────
-observation_space:
-  type: object
-  fields:
-    - name: step
-      type: integer
-    - name: timestamp_hour
-      type: float
-    - name: outside_temp_c
-      type: float
-    - name: chiller_active
-      type: boolean
-    - name: chiller_cop
-      type: float
-    - name: grid_carbon_intensity
-      type: string
-      enum: [low, medium, high, critical_high]
-    - name: current_pue
-      type: float
-    - name: zones
-      type: array
-    - name: maintenance_notes
-      type: array
-    - name: upcoming_events
-      type: array
-
-action_space:
-  type: object
-  fields:
-    - name: zone_adjustments
-      type: array
-    - name: reasoning
-      type: string
-
-reward:
-  range: [-1.0, 1.0]
-  per_step: true
-
-# ── Tasks ──────────────────────────────────────────────
+  Data Centre Cooling Control — a physics-based sequential decision environment
+  for evaluating AI agents on real-world industrial control tasks.
+  Three tasks from thermal recovery (easy) to carbon-aware cascading failure triage (hard).
+author: "Team DC-OpenEnv"
+license: Apache-2.0
+tags:
+  - openenv
+  - data-center
+  - cooling
+  - energy-efficiency
+  - carbon-aware
+  - safety-constrained
 tasks:
   - id: easy-single-zone
-    name: Single-Zone Temperature Control
     difficulty: easy
-    description: >
-      Keep one server room zone in safe temperature range (18-27C)
-      while minimizing PUE. Zone starts overheated at 28.5C with fan at 60%.
-    max_steps: 12
-    success_threshold: 0.6
+    max_steps: 48
+    description: "Single-zone thermal runaway recovery"
+  - id: medium-multi-zone
+    difficulty: medium
+    max_steps: 144
+    description: "Multi-zone load surge with sensor fault"
+  - id: hard-cascading-failure
+    difficulty: hard
+    max_steps: 288
+    description: "Cascading chiller failure with carbon-aware triage"
+action_space:
+  type: structured
+  fields:
+    - name: fan_speed_pct
+      type: float
+      range: [0, 100]
+    - name: supply_air_temp_setpoint_c
+      type: float
+      range: [16, 26]
+    - name: chiller_setpoint_c
+      type: float
+      range: [6, 15]
+    - name: chiller_active
+      type: bool
+observation_space:
+  type: structured
+  description: "Per-zone sensor readings + facility state + 3-step history buffer"
+reward_range: [-1.0, 1.0]
 # spec_version: 1
 # name: datacenter_env
 # type: space

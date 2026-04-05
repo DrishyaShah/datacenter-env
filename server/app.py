@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from openenv.core.env_server.http_server import create_app
 
 # Import your environment and models
-from .datacenter_env_environment import DCEnvironment
+from .environment import DCEnvironment
 from .models import DCAction, DCObservation
 
 # ── Request schemas for external clients ──────────────────────────────────────
