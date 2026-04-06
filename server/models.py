@@ -32,11 +32,11 @@ class ZoneObservation(BaseModel):
     # ── Load ──────────────────────────────────────────────────────────────────
     it_load_kw: float = Field(..., description="Current IT equipment power draw (kW)")
     it_load_pct: float = Field(
-        ..., description="Normalised IT load relative to zone baseline [0–1]"
+        ..., description="Normalised IT load relative to zone baseline [0-1]"
     )
 
     # ── Fan / cooling ─────────────────────────────────────────────────────────
-    fan_speed_pct: float = Field(..., description="Current fan speed (0–100 %)")
+    fan_speed_pct: float = Field(..., description="Current fan speed (0-100 %)")
     cooling_capacity_kw: float = Field(
         ..., description="Max cooling capacity at full fan speed (kW)"
     )
@@ -47,7 +47,7 @@ class ZoneObservation(BaseModel):
     # ── Sensor metadata ───────────────────────────────────────────────────────
     sensor_confidence: float = Field(
         ..., ge=0.0, le=1.0,
-        description="Reliability weight of this zone's sensor reading [0.0–1.0]"
+        description="Reliability weight of this zone's sensor reading [0.0-1.0]"
     )
     zone_priority: int = Field(
         ..., ge=0, le=2,

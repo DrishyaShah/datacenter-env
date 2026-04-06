@@ -23,15 +23,23 @@ tasks:
   - id: easy-single-zone
     difficulty: easy
     max_steps: 48
-    description: "Single-zone thermal runaway recovery"
+    description: >
+      Single zone starts at 28.5 °C (overheating). Agent must recover to [18-27 °C]
+      and maintain efficient cooling for 4 simulated hours at peak load.
   - id: medium-multi-zone
     difficulty: medium
-    max_steps: 144
-    description: "Multi-zone load surge with sensor fault"
+    max_steps: 48
+    description: >
+      Three zones with diurnal load surge. One zone has a faulty sensor reporting
+      +9-12 °C above true temperature. Agent must infer true state from sensor_confidence
+      and cold_aisle_temp_c, avoid over-cooling, and handle peak load safely.
   - id: hard-cascading-failure
     difficulty: hard
-    max_steps: 288
-    description: "Cascading chiller failure with carbon-aware triage"
+    max_steps: 72
+    description: >
+      Four zones: chiller COP degrades at step 15, chiller goes offline at step 20.
+      Agent must triage — protect CRITICAL priority zones (zone_ai_1, zone_ai_2)
+      even at the expense of LOW priority zones, while minimising carbon cost.
 
 action_space:
   type: structured

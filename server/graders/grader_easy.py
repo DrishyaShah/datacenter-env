@@ -95,10 +95,11 @@ class EasyGraderState:
             temp_reward = -0.30 * min(violation / 3.0, 1.0)
 
         # ── PUE reward (vs PID baseline, not vs zero-cooling) ─────────────────
+        # Suppressed while zone is out of range: don't penalise necessary aggressive cooling.
         pue_range  = max(pid_baseline_pue - IDEAL_PUE, 0.01)   # avoid div/0
         pue_vs_pid = (pid_baseline_pue - current_pue) / pue_range
         pue_vs_pid = max(-1.0, min(1.0, pue_vs_pid))
-        pue_reward = 0.35 * pue_vs_pid
+        pue_reward = 0.35 * pue_vs_pid if in_range else 0.0
 
         # ── Carbon signal (light penalty, easy task doesn't heavily weight it) ─
         carbon = grader_input.get("carbon_intensity_normalized", 0.5)

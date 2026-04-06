@@ -160,10 +160,11 @@ class MediumGrader:
                 self.peak_load_steps_safe += 1
 
         # ── PUE component ─────────────────────────────────────────────────────
+        # Suppressed while any zone is out of range: don't penalise recovery cooling.
         denominator = max(pid_baseline_pue - IDEAL_PUE, 0.01)
         pue_improvement = (pid_baseline_pue - current_pue) / denominator
         pue_improvement = max(-0.5, min(1.0, pue_improvement))
-        pue_reward = STEP_PUE_WEIGHT * pue_improvement
+        pue_reward = STEP_PUE_WEIGHT * pue_improvement if all_zones_safe else 0.0
 
         # ── Carbon component ──────────────────────────────────────────────────
         # Total cooling power proxied by sum of fan speed × capacity fractions

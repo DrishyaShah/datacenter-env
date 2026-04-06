@@ -5,8 +5,8 @@ Runs the datacenter cooling environment against an LLM via an OpenAI-compatible 
 
 Environment variables:
     HF_TOKEN or OPENAI_API_KEY   API key (either is accepted)
-    API_BASE_URL                 e.g. https://api.groq.com/openai/v1
-    MODEL_NAME                   e.g. llama-3.3-70b-versatile
+    API_BASE_URL                 e.g. https://api.groq.com/openai/v1  (default: Groq)
+    MODEL_NAME                   e.g. llama-3.3-70b-versatile  (default: 70b versatile)
     INFERENCE_MAX_STEPS_PER_TASK Optional cap per task (int) to stay under time limits
     VERBOSE                      If "1", print non-protocol [INFO]/[SCORE] lines
 
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import json
+import sys
 import textwrap
 import time
 from typing import List, Optional
@@ -29,9 +30,11 @@ from openai import OpenAI, RateLimitError
 from server.environment import DCEnvironment
 from server.models import DCAction, DCObservation, ZoneAdjustment
 
-import sys
+
+# ── Tee: dual-output logger ───────────────────────────────────────────────────
 
 class Tee:
+    """Write to multiple file objects simultaneously (stdout + log file)."""
     def __init__(self, *files):
         self.files = files
 
@@ -44,38 +47,27 @@ class Tee:
         for f in self.files:
             f.flush()
 
-log_file = open("inference_output.txt", "w")
-
-# Redirect stdout and stderr
-sys.stdout = Tee(sys.stdout, log_file)
-sys.stderr = Tee(sys.stderr, log_file)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.groq.com/openai/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.1-8b-instant")
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY") or ""
-VERBOSE = os.getenv("VERBOSE", "").strip().lower() in ("1", "true", "yes")
+MODEL_NAME   = os.getenv("MODEL_NAME",   "llama-3.3-70b-versatile")
+API_KEY      = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY") or ""
+VERBOSE      = os.getenv("VERBOSE", "").strip().lower() in ("1", "true", "yes")
 
 _steps_cap_raw = os.getenv("INFERENCE_MAX_STEPS_PER_TASK", "").strip()
 INFERENCE_MAX_STEPS_PER_TASK: Optional[int] = (
     int(_steps_cap_raw) if _steps_cap_raw.isdigit() else None
 )
 
-if not API_KEY:
-    raise RuntimeError(
-        "Set HF_TOKEN or OPENAI_API_KEY.\n"
-        "  PowerShell: $env:HF_TOKEN='...'\n"
-        "  bash:       export HF_TOKEN='...'"
-    )
-
-client = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
+# OpenAI client — initialised in main() after key validation
+client: Optional[OpenAI] = None
 
 SUCCESS_THRESHOLD = 0.6
 
 # ── Rate-limit / retry config ─────────────────────────────────────────────────
-STEP_SLEEP_SECONDS = 2          # 2 s between steps → max 30 RPM for 288-step hard task
-LLM_MAX_RETRIES = 3             # attempts before falling back to default action
-LLM_RETRY_BASE_SLEEP = 5.0     # seconds; doubles on each retry (5, 10, 20)
+STEP_SLEEP_SECONDS   = 0            # no inter-step sleep — stay well under 20-min cap
+LLM_MAX_RETRIES      = 3            # attempts before falling back to held settings
+LLM_RETRY_BASE_SLEEP = 5.0         # seconds; doubles on each retry (5 → 10 → 20)
 
 # ── Task registry (all three tasks run against DCEnvironment + graders) ───────
 TASKS = [
@@ -87,12 +79,12 @@ TASKS = [
     {
         "name": "medium-multi-zone",
         "description": "Multi-zone load surge with faulty sensor and diurnal variation",
-        "max_steps": 144,
+        "max_steps": 48,
     },
     {
         "name": "hard-cascading-failure",
         "description": "Cascading chiller failure with carbon-aware triage",
-        "max_steps": 288,
+        "max_steps": 72,
     },
 ]
 
@@ -100,10 +92,18 @@ TASKS = [
 SYSTEM_PROMPT = textwrap.dedent("""
     You are a data centre operations engineer AI managing server room cooling.
 
-    Your goals (in priority order):
-      1. Keep ALL zone temperatures strictly between 18C and 27C (critical)
-      2. Minimise PUE (Power Usage Effectiveness) — lower is better
-      3. Keep humidity between 40% and 60%
+    === MDP STRUCTURE ===
+    State : zone temperatures, fan speeds, supply setpoints, chiller state, PUE,
+            carbon intensity, SLA streak, 3-step history buffer.
+    Action: per-zone fan_speed_pct [0-100] + supply_air_temp_setpoint_c [16-26],
+            chiller_setpoint_c [6-15], chiller_active bool.
+    Reward: shaped by temperature compliance, PUE vs baseline, carbon cost, smoothness.
+    Goal  : keep ALL zones in [18-27 °C], minimise PUE, prefer low-carbon cooling.
+
+    === DECISION RULES (priority order) ===
+    1. SAFETY FIRST — all zones must stay in [18, 27] °C at every step.
+    2. EFFICIENCY — lower PUE is better; avoid high fans when the zone is already safe.
+    3. CARBON — prefer lower fan speeds during high-carbon grid windows.
 
     At each step you receive the current data centre state as JSON.
     The "zones" array lists each zone with its zone_id and all sensor readings.
@@ -119,31 +119,52 @@ SYSTEM_PROMPT = textwrap.dedent("""
       ],
       "chiller_setpoint_c": <number 6.0 to 15.0>,
       "chiller_active": <true or false>,
-      "reasoning": "<one sentence>"
+      "reasoning": "<one sentence explaining your main decision>"
     }
 
-    RULES:
-    - Copy EXACT zone_id strings from the observation — never invent zone names
-    - Include ALL zones from the observation in zone_adjustments every step
-    - Zone cold_aisle_temp_c ABOVE 27C → fan_speed_pct high (80-100), supply_air_temp_setpoint_c low (16-18)
-    - Zone cold_aisle_temp_c BELOW 18C → you are OVERCOOLING, same severity as overheating
-    Immediately: raise supply_air_temp_setpoint_c by 2, reduce fan_speed_pct by 15-20
-    - Zone cold_aisle_temp_c between 19C and 23C AND falling for 2+ steps in history → back off now
-    Set fan_speed_pct=45-55, supply_air_temp_setpoint_c=21-22 to avoid drifting below 18C
-    - Thermal inertia: the zone keeps cooling for 2-3 steps after you reduce fans
-    Back off BEFORE the zone hits 18C, not after
-    - On overheating recovery: use aggressive cooling (fan=85-95) only while temp > 24C
-    Switch to moderate (fan=55-70) once temp drops below 24C                           
-    - Zone cold_aisle_temp_c BELOW 18C → fan_speed_pct low (20-40), supply_air_temp_setpoint_c high (22-26)
-    - Zone in safe range → moderate fan (40-65) and supply_air_temp_setpoint_c near 20-22 to save energy
-    - Keep chiller_active true unless you have a specific reason to disable it
-    - Lower chiller_setpoint_c (e.g. 8.0) = colder water = more cooling power but higher energy cost
-    - On overheating scenarios, act aggressively in early steps
-    - chiller_setpoint_c must be 3-5C LOWER than supply_air_temp_setpoint_c.
-      The chiller produces cold water which then cools the supply air.
-      chiller=10C means supply air can realistically reach 13-18C.
-      Setting chiller=6C with supply=26C wastes chiller energy — physically incoherent.
-      Use: chiller_setpoint_c ≈ supply_air_temp_setpoint_c minus 4, clamped to [6, 15].
+    === ZONE CONTROL RULES ===
+    - Copy EXACT zone_id strings from the observation — never invent zone names.
+    - Include ALL zones from the observation in zone_adjustments every step.
+    - cold_aisle_temp_c ABOVE 27 °C → fan high (80-100), supply setpoint low (16-18).
+    - cold_aisle_temp_c BELOW 18 °C → you are OVERCOOLING (same severity as overheating).
+      Immediately raise supply_air_temp_setpoint_c by 2, reduce fan_speed_pct by 15-20.
+    - cold_aisle_temp_c between 19-23 °C AND falling for 2+ steps → back off NOW.
+      Set fan=45-55, supply=21-22 to avoid drifting below 18 °C.
+    - Thermal inertia: the zone keeps cooling for 2-3 steps after you reduce fans.
+      Back off BEFORE the zone hits 18 °C, not after.
+    - Overheating recovery: aggressive cooling (fan=85-95) only while temp > 24 °C.
+      Switch to moderate (fan=55-70) once temp drops below 24 °C.
+    - Zone in safe range [18-27] → moderate fan (40-65), supply near 20-22 to save energy.
+
+    === SENSOR CONFIDENCE RULE ===
+    - Each zone has a sensor_confidence field [0.0-1.0].
+    - If sensor_confidence < 0.5, the reported_temp_c is UNRELIABLE (sensor may be drifted
+      or faulty — reporting up to 12 °C above the true temperature).
+    - When sensor_confidence < 0.5, trust cold_aisle_temp_c instead of reported_temp_c.
+    - Never set max fans based solely on a high reported_temp_c when sensor_confidence < 0.5.
+      Instead use cold_aisle_temp_c and hot_aisle_temp_c to judge the true thermal state.
+
+    === CHILLER RULES ===
+    - Keep chiller_active true unless you have a specific reason to disable it.
+    - chiller_setpoint_c MUST be between 6.0 and 15.0 — never go above 15.
+      Values above 15 will be silently clamped to 15.
+    - A reasonable default is chiller_setpoint_c = 10.0 for most situations.
+    - Lower chiller_setpoint_c (e.g. 8.0) = colder water = more cooling power but
+      higher energy cost. Use 8-10 for recovery, 11-14 for steady efficient operation.
+    - If chiller_fault_detected is true: chiller may be offline or degraded.
+      Compensate with higher fan speeds and lower supply setpoints.
+
+    === TRIAGE RULE (multi-zone only) ===
+    - Zones have zone_priority: 2=CRITICAL, 1=MEDIUM, 0=LOW.
+    - If cooling capacity is constrained, protect CRITICAL zones first.
+    - It is acceptable (even correct) to allow LOW-priority zones to drift warm
+      temporarily if doing so keeps CRITICAL zones safe.
+
+    === RATE LIMITS (physics constraint) ===
+    - Fan speed can only change ±20 % per step.
+    - Supply air setpoint can only change ±2 °C per step.
+    - Chiller setpoint can only change ±1 °C per step.
+    - Plan ahead — you cannot jump from fan=40 to fan=100 in one step.
 """).strip()
 
 
@@ -191,7 +212,7 @@ def get_llm_action(obs_dict: dict, step: int, history: List[str]) -> dict:
         Step {step} — Current Data Centre State:
         {json.dumps(obs_dict, indent=2)}
 
-        Recent history:
+        Recent history (oldest → newest):
         {history_block}
 
         Respond with your JSON action. Use the exact zone_id values shown above.
@@ -208,7 +229,7 @@ def get_llm_action(obs_dict: dict, step: int, history: List[str]) -> dict:
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.2,
-                max_tokens=350,
+                max_tokens=400,
             )
             raw = (response.choices[0].message.content or "").strip()
             if not raw:
@@ -235,8 +256,9 @@ def get_llm_action(obs_dict: dict, step: int, history: List[str]) -> dict:
             )
             time.sleep(sleep_for)
 
-    # All retries exhausted — re-raise so run_task() can log and fall back
-    raise last_exc
+    # All retries exhausted — return empty dict so caller falls back gracefully
+    _vprint(f"[WARN] All {LLM_MAX_RETRIES} LLM attempts failed at step {step}, using fallback")
+    return {}
 
 
 # ── Build DCAction from LLM output ────────────────────────────────────────────
@@ -249,8 +271,8 @@ def build_action(llm_result: dict, obs: DCObservation) -> DCAction:
 
     for i, adj in enumerate(adjustments_raw):
         llm_zone_id = adj.get("zone_id", "")
-        fan_speed = float(adj.get("fan_speed_pct", 80.0))
-        supply_temp = float(adj.get("supply_air_temp_setpoint_c", 20.0))
+        fan_speed    = float(adj.get("fan_speed_pct", 80.0))
+        supply_temp  = float(adj.get("supply_air_temp_setpoint_c", 20.0))
 
         if llm_zone_id in zone_obs_map:
             actual_zone_id = llm_zone_id
@@ -281,7 +303,7 @@ def build_action(llm_result: dict, obs: DCObservation) -> DCAction:
 
     return DCAction(
         zone_adjustments=adjustments,
-        chiller_setpoint_c=float(llm_result.get("chiller_setpoint_c", 10.0)),
+        chiller_setpoint_c=max(6.0, min(15.0, float(llm_result.get("chiller_setpoint_c", 10.0)))),
         chiller_active=bool(llm_result.get("chiller_active", True)),
         reasoning=llm_result.get("reasoning", ""),
     )
@@ -302,9 +324,9 @@ def run_task(task_cfg: dict) -> float:
 
     env = DCEnvironment(task=task_name)
     rewards: List[float] = []
-    history: List[str] = []
+    history: List[str]   = []
     steps_taken = 0
-    score = 0.0
+    score   = 0.0
     success = False
 
     try:
@@ -382,11 +404,11 @@ def run_task(task_cfg: dict) -> float:
             try:
                 step_result = env.step(action)
                 reward = step_result.reward
-                done = step_result.done
-                obs = step_result.observation
+                done   = step_result.done
+                obs    = step_result.observation
             except Exception as e:
-                reward = 0.0
-                done = True
+                reward    = 0.0
+                done      = True
                 error_str = str(e)[:120]
 
             rewards.append(reward)
@@ -402,7 +424,7 @@ def run_task(task_cfg: dict) -> float:
 
             zone_parts = []
             for z in obs.zones:
-                prev = _prev_temps.get(z.zone_id, z.cold_aisle_temp_c)
+                prev  = _prev_temps.get(z.zone_id, z.cold_aisle_temp_c)
                 delta = z.cold_aisle_temp_c - prev
                 _prev_temps[z.zone_id] = z.cold_aisle_temp_c
                 zone_parts.append(
@@ -418,7 +440,8 @@ def run_task(task_cfg: dict) -> float:
             if done:
                 break
 
-            time.sleep(STEP_SLEEP_SECONDS)
+            if STEP_SLEEP_SECONDS > 0:
+                time.sleep(STEP_SLEEP_SECONDS)
 
         grader = getattr(env, "_grader", None)
         if grader is not None and hasattr(grader, "final_score"):
@@ -436,6 +459,24 @@ def run_task(task_cfg: dict) -> float:
 
 
 def main() -> None:
+    global client
+
+    # ── Set up dual-output logging (stdout + file) ────────────────────────────
+    log_file = open("inference_output.txt", "w")
+    sys.stdout = Tee(sys.stdout, log_file)
+    sys.stderr = Tee(sys.stderr, log_file)
+
+    # ── Validate API key ──────────────────────────────────────────────────────
+    if not API_KEY:
+        raise RuntimeError(
+            "Set HF_TOKEN or OPENAI_API_KEY.\n"
+            "  PowerShell: $env:HF_TOKEN='...'\n"
+            "  bash:       export HF_TOKEN='...'"
+        )
+
+    # ── Initialise OpenAI-compatible client ───────────────────────────────────
+    client = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
+
     _vprint(f"[INFO] API_BASE_URL = {API_BASE_URL}")
     _vprint(f"[INFO] MODEL_NAME   = {MODEL_NAME}")
     _vprint(f"[INFO] Running {len(TASKS)} tasks")

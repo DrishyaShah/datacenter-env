@@ -45,7 +45,7 @@ IDEAL_PUE = 1.15
 
 # ── Triage: which zone IDs are critical vs sacrificeable ──────────────────────
 CRITICAL_ZONE_IDS    = {"zone_ai_1", "zone_ai_2"}
-SACRIFICE_ZONE_IDS   = {"zone_infra", "zone_storage"}
+SACRIFICE_ZONE_IDS   = {"zone_infra"}   # zone_storage is PRIORITY_MEDIUM — not sacrificeable
 
 # ── Priority safety: consecutive violation threshold ──────────────────────────
 CRITICAL_CONSEC_VIOLATION_LIMIT = 5
@@ -58,11 +58,11 @@ FINAL_TRIAGE_WEIGHT    = 0.15
 FINAL_REASONING_WEIGHT = 0.10
 
 # ── Step reward weights ───────────────────────────────────────────────────────
-STEP_TEMP_WEIGHT     = 0.35
-STEP_PUE_WEIGHT      = 0.20
-STEP_CARBON_WEIGHT   = 0.15
-STEP_SAFETY_WEIGHT   = 0.20
-STEP_ROUGH_WEIGHT    = 0.05
+STEP_TEMP_WEIGHT      = 0.45   # raised from 0.35 — temperature compliance is primary
+STEP_PUE_WEIGHT       = 0.20
+STEP_CARBON_WEIGHT    = 0.05   # lowered from 0.15 — don't override safety with carbon cost
+STEP_SAFETY_WEIGHT    = 0.20
+STEP_ROUGH_WEIGHT     = 0.05
 STEP_STABILITY_WEIGHT = 0.05
 
 
@@ -203,10 +203,18 @@ class HardGrader:
                 self.recovery_steps_safe += 1
 
         # ── PUE component ─────────────────────────────────────────────────────
+        # Suppressed during chiller fault window or when any critical zone is above 25 °C:
+        # high fans are mandatory then — penalising PUE discourages necessary cooling.
         denominator = max(pid_baseline_pue - IDEAL_PUE, 0.01)
         pue_improvement = (pid_baseline_pue - current_pue) / denominator
         pue_improvement = max(-0.5, min(1.0, pue_improvement))
-        pue_reward = STEP_PUE_WEIGHT * pue_improvement
+        _any_critical_hot = any(
+            z.get("temp_c", 22.0) > 25.0
+            for z in zones
+            if z.get("zone_id", "") in CRITICAL_ZONE_IDS
+        )
+        _pue_suppressed = is_post_fault or _any_critical_hot
+        pue_reward = STEP_PUE_WEIGHT * pue_improvement if not _pue_suppressed else 0.0
 
         # ── Carbon component ──────────────────────────────────────────────────
         cooling_proxy = sum(z.get("fan_speed_pct", 50.0) / 100.0 for z in zones) / n_zones

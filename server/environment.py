@@ -78,15 +78,15 @@ TASK_CONFIGS: Dict[str, Dict[str, Any]] = {
         "hard_termination": False,
     },
     "medium-multi-zone": {
-        "max_steps": 144,
+        "max_steps": 48,
         "scenario_builder": build_medium_scenario,
         "grader_class": MediumGrader,
         "description": "3-zone load surge with faulty sensor and diurnal variation",
         "hard_termination": True,
-        "hard_term_mode": "violation_streak",   # 3+ consecutive steps any zone unsafe
+        "hard_term_mode": "violation_streak",   # 10+ consecutive steps any zone unsafe
     },
     "hard-cascading-failure": {
-        "max_steps": 288,
+        "max_steps": 72,
         "scenario_builder": build_hard_scenario,
         "grader_class": HardGrader,
         "description": "4-zone cascading chiller failure with carbon-aware triage",
@@ -211,6 +211,9 @@ class DCEnvironment(Environment):
         if terminated_early:
             step_reward = terminal_score
             self._done = True
+            # Notify the grader so final_score() can return 0.0 on catastrophic failure
+            if hasattr(self._grader, "mark_sla_terminated"):
+                self._grader.mark_sla_terminated()
         elif self._step_count >= self.max_steps:
             self._done = True
 
@@ -310,7 +313,7 @@ class DCEnvironment(Environment):
         mode = cfg.get("hard_term_mode", "")
 
         if mode == "violation_streak":
-            # Medium task: any zone unsafe for 3+ consecutive steps → terminate
+            # Medium task: any zone unsafe for 10+ consecutive steps → terminate
             if self._sla_violation_streak >= MEDIUM_MAX_CONSECUTIVE_VIOLATIONS:
                 return True, 0.0
 
@@ -367,6 +370,7 @@ class DCEnvironment(Environment):
                     "temp_c": z.temp_c,
                     "hot_aisle_temp_c": z.hot_aisle_temp_c,
                     "it_load_kw": z.it_load_kw,
+                    "it_load_pct": z.it_load_pct,
                     "fan_speed_pct": z.fan_speed_pct,
                     "supply_air_temp_setpoint_c": z.supply_air_temp_setpoint_c,
                     "zone_priority": z.zone_priority,
