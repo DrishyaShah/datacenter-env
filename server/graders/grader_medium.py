@@ -7,14 +7,14 @@ Scoring criteria (deterministic, reproducible):
   - Sensor inference quality: did the agent act correctly for zone_ai despite bad sensor?
   - Peak-load compliance: were all zones safe during the high-load surge window?
 
-Final score breakdown [0.0–1.0]:
+Final score breakdown [0.0-1.0]:
   35% — All-zone temperature compliance fraction
   25% — Average PUE improvement vs pid_baseline_pue
   20% — Sensor inference quality for zone_ai (faulty sensor zone)
-  20% — Compliance fraction during peak load window (steps 30–80)
+  20% — Compliance fraction during peak load window (steps 30-80)
 
 Sensor inference quality:
-  A naive agent trusts the faulty sensor (reports +9–12°C above actual).
+  A naive agent trusts the faulty sensor (reports +9-12°C above actual).
   It will over-cool zone_ai, wasting energy, or panic and max fans unnecessarily.
   We measure quality by comparing the agent's supply_air_temp_setpoint_c for zone_ai
   against what an oracle (knowing true temp) would set. Closer = better inference.
@@ -262,7 +262,7 @@ class MediumGrader:
 
 def _compute_roughness(action: Any, last_action: Any, zones: List[dict]) -> float:
     """
-    Measure action roughness as a normalised [0–1] value.
+    Measure action roughness as a normalised [0-1] value.
 
     Returns 0.0 if last_action is unavailable (first step).
     """

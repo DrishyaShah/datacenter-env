@@ -63,10 +63,9 @@ class EasyGraderState:
         (total_reward: float, reward_detail: DCReward)
         """
         self.steps_total += 1
-
         current_pue      = grader_input["current_pue"]
         pid_baseline_pue = grader_input.get("pid_baseline_pue", 1.55)
-
+        self._pid_baseline_pue = pid_baseline_pue
         # Easy task: always single zone — take first zone
         zones = grader_input["zones"]
         zone  = zones[0] if zones else {}

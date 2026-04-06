@@ -5,10 +5,10 @@ Single zone. Zone starts at 28.5 °C (already overheating).
 Steady IT load of 450 kW. Outside temp 32 °C (hot summer day).
 Grid: medium carbon. No faults. Full cooling capacity available.
 
-Agent must bring the zone back into [18–27 °C], then maintain it
+Agent must bring the zone back into [18-27 °C], then maintain it
 efficiently — not just pin fans at 100 % forever.
 
-Episode: 48 steps × 5 min = 4 hours of simulated time.
+Episode: 48 steps x 5 min = 4 hours of simulated time.
 Start time: 14:00 (peak carbon / peak outside temperature).
 """
 

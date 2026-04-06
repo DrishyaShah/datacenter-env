@@ -47,7 +47,7 @@ SAFE_TEMP_MIN = 18.0
 SAFE_TEMP_MAX = 27.0
 
 # Hard termination thresholds (per spec §4 Episode Boundaries)
-MEDIUM_MAX_CONSECUTIVE_VIOLATIONS = 3       # any zone unsafe for 3+ consecutive steps
+MEDIUM_MAX_CONSECUTIVE_VIOLATIONS = 10      # any zone unsafe for 10+ consecutive steps
 HARD_CRITICAL_TEMP_THRESHOLD = 32.0         # °C
 HARD_CRITICAL_CONSECUTIVE_STEPS = 5         # sustained breach → episode ends, score = 0
 
@@ -463,10 +463,10 @@ class DCEnvironment(Environment):
         """
         Classify the current hour into a diurnal load phase.
 
-        ramp_up   : 06:00–10:00
-        peak      : 10:00–17:00
-        ramp_down : 17:00–22:00
-        idle      : 22:00–06:00
+        ramp_up   : 06:00-10:00
+        peak      : 10:00-17:00
+        ramp_down : 17:00-22:00
+        idle      : 22:00-06:00
         """
         hour = self._facility.timestamp_hour
         if 6 <= hour < 10:

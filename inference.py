@@ -21,16 +21,38 @@ from __future__ import annotations
 import os
 import json
 import textwrap
+import time
 from typing import List, Optional
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 
 from server.environment import DCEnvironment
 from server.models import DCAction, DCObservation, ZoneAdjustment
 
+import sys
+
+class Tee:
+    def __init__(self, *files):
+        self.files = files
+
+    def write(self, data):
+        for f in self.files:
+            f.write(data)
+            f.flush()
+
+    def flush(self):
+        for f in self.files:
+            f.flush()
+
+log_file = open("inference_output.txt", "w")
+
+# Redirect stdout and stderr
+sys.stdout = Tee(sys.stdout, log_file)
+sys.stderr = Tee(sys.stderr, log_file)
+
 # ── Config ─────────────────────────────────────────────────────────────────────
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.groq.com/openai/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
+MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.1-8b-instant")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY") or ""
 VERBOSE = os.getenv("VERBOSE", "").strip().lower() in ("1", "true", "yes")
 
@@ -49,6 +71,11 @@ if not API_KEY:
 client = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
 
 SUCCESS_THRESHOLD = 0.6
+
+# ── Rate-limit / retry config ─────────────────────────────────────────────────
+STEP_SLEEP_SECONDS = 2          # 2 s between steps → max 30 RPM for 288-step hard task
+LLM_MAX_RETRIES = 3             # attempts before falling back to default action
+LLM_RETRY_BASE_SLEEP = 5.0     # seconds; doubles on each retry (5, 10, 20)
 
 # ── Task registry (all three tasks run against DCEnvironment + graders) ───────
 TASKS = [
@@ -99,11 +126,24 @@ SYSTEM_PROMPT = textwrap.dedent("""
     - Copy EXACT zone_id strings from the observation — never invent zone names
     - Include ALL zones from the observation in zone_adjustments every step
     - Zone cold_aisle_temp_c ABOVE 27C → fan_speed_pct high (80-100), supply_air_temp_setpoint_c low (16-18)
+    - Zone cold_aisle_temp_c BELOW 18C → you are OVERCOOLING, same severity as overheating
+    Immediately: raise supply_air_temp_setpoint_c by 2, reduce fan_speed_pct by 15-20
+    - Zone cold_aisle_temp_c between 19C and 23C AND falling for 2+ steps in history → back off now
+    Set fan_speed_pct=45-55, supply_air_temp_setpoint_c=21-22 to avoid drifting below 18C
+    - Thermal inertia: the zone keeps cooling for 2-3 steps after you reduce fans
+    Back off BEFORE the zone hits 18C, not after
+    - On overheating recovery: use aggressive cooling (fan=85-95) only while temp > 24C
+    Switch to moderate (fan=55-70) once temp drops below 24C                           
     - Zone cold_aisle_temp_c BELOW 18C → fan_speed_pct low (20-40), supply_air_temp_setpoint_c high (22-26)
     - Zone in safe range → moderate fan (40-65) and supply_air_temp_setpoint_c near 20-22 to save energy
     - Keep chiller_active true unless you have a specific reason to disable it
     - Lower chiller_setpoint_c (e.g. 8.0) = colder water = more cooling power but higher energy cost
     - On overheating scenarios, act aggressively in early steps
+    - chiller_setpoint_c must be 3-5C LOWER than supply_air_temp_setpoint_c.
+      The chiller produces cold water which then cools the supply air.
+      chiller=10C means supply air can realistically reach 13-18C.
+      Setting chiller=6C with supply=26C wastes chiller energy — physically incoherent.
+      Use: chiller_setpoint_c ≈ supply_air_temp_setpoint_c minus 4, clamped to [6, 15].
 """).strip()
 
 
@@ -144,7 +184,7 @@ def _vprint(*args, **kwargs) -> None:
         print(*args, **kwargs)
 
 
-# ── LLM call ──────────────────────────────────────────────────────────────────
+# ── LLM call with retry on 429 ────────────────────────────────────────────────
 def get_llm_action(obs_dict: dict, step: int, history: List[str]) -> dict:
     history_block = "\n".join(history[-4:]) if history else "None"
     user_prompt = textwrap.dedent(f"""
@@ -157,34 +197,53 @@ def get_llm_action(obs_dict: dict, step: int, history: List[str]) -> dict:
         Respond with your JSON action. Use the exact zone_id values shown above.
     """).strip()
 
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.2,
-        max_tokens=350,
-    )
-    raw = (response.choices[0].message.content or "").strip()
-    if not raw:
-        raise ValueError("empty model response")
+    last_exc: Exception = RuntimeError("no attempts made")
 
-    if "```" in raw:
-        parts = raw.split("```")
-        for part in parts:
-            part = part.strip()
-            if part.startswith("json"):
-                part = part[4:].strip()
-            if part.startswith("{"):
-                raw = part
-                break
+    for attempt in range(1, LLM_MAX_RETRIES + 1):
+        try:
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.2,
+                max_tokens=350,
+            )
+            raw = (response.choices[0].message.content or "").strip()
+            if not raw:
+                raise ValueError("empty model response")
 
-    return json.loads(raw.strip())
+            if "```" in raw:
+                parts = raw.split("```")
+                for part in parts:
+                    part = part.strip()
+                    if part.startswith("json"):
+                        part = part[4:].strip()
+                    if part.startswith("{"):
+                        raw = part
+                        break
+
+            return json.loads(raw.strip())
+
+        except RateLimitError as e:
+            last_exc = e
+            sleep_for = LLM_RETRY_BASE_SLEEP * (2 ** (attempt - 1))  # 5, 10, 20
+            _vprint(
+                f"[WARN] 429 rate-limit on attempt {attempt}/{LLM_MAX_RETRIES} "
+                f"at step {step} — sleeping {sleep_for:.0f}s before retry"
+            )
+            time.sleep(sleep_for)
+
+    # All retries exhausted — re-raise so run_task() can log and fall back
+    raise last_exc
 
 
 # ── Build DCAction from LLM output ────────────────────────────────────────────
-def build_action(llm_result: dict, zone_ids: List[str]) -> DCAction:
+def build_action(llm_result: dict, obs: DCObservation) -> DCAction:
+    zone_obs_map = {z.zone_id: z for z in obs.zones}
+    zone_ids = list(zone_obs_map.keys())
+
     adjustments_raw = llm_result.get("zone_adjustments", [])
     adjustments = []
 
@@ -193,7 +252,7 @@ def build_action(llm_result: dict, zone_ids: List[str]) -> DCAction:
         fan_speed = float(adj.get("fan_speed_pct", 80.0))
         supply_temp = float(adj.get("supply_air_temp_setpoint_c", 20.0))
 
-        if llm_zone_id in zone_ids:
+        if llm_zone_id in zone_obs_map:
             actual_zone_id = llm_zone_id
         elif i < len(zone_ids):
             actual_zone_id = zone_ids[i]
@@ -211,11 +270,12 @@ def build_action(llm_result: dict, zone_ids: List[str]) -> DCAction:
     covered = {a.zone_id for a in adjustments}
     for zone_id in zone_ids:
         if zone_id not in covered:
+            z = zone_obs_map[zone_id]
             adjustments.append(
                 ZoneAdjustment(
                     zone_id=zone_id,
-                    fan_speed_pct=85.0,
-                    supply_air_temp_setpoint_c=18.0,
+                    fan_speed_pct=z.fan_speed_pct,
+                    supply_air_temp_setpoint_c=z.supply_air_temp_setpoint_c,
                 )
             )
 
@@ -251,6 +311,7 @@ def run_task(task_cfg: dict) -> float:
         reset_result = env.reset()
         obs: DCObservation = reset_result.observation
 
+        _prev_temps = {}
         for step in range(1, max_steps + 1):
             obs_dict = {
                 "step": obs.step,
@@ -287,26 +348,25 @@ def run_task(task_cfg: dict) -> float:
                 "maintenance_notes": obs.maintenance_notes,
                 "upcoming_events": obs.upcoming_events,
             }
-            zone_ids = [z.zone_id for z in obs.zones]
-
             error_str = None
             try:
                 llm_result = get_llm_action(obs_dict, step, history)
-                action = build_action(llm_result, zone_ids)
+                action = build_action(llm_result, obs)
             except Exception as e:
                 error_str = str(e)[:120]
+                _vprint(f"[WARN] step {step} LLM failed ({error_str}), holding current settings")
                 action = DCAction(
                     zone_adjustments=[
                         ZoneAdjustment(
-                            zone_id=z,
-                            fan_speed_pct=85.0,
-                            supply_air_temp_setpoint_c=18.0,
+                            zone_id=z.zone_id,
+                            fan_speed_pct=z.fan_speed_pct,
+                            supply_air_temp_setpoint_c=z.supply_air_temp_setpoint_c,
                         )
-                        for z in zone_ids
+                        for z in obs.zones
                     ],
-                    chiller_setpoint_c=10.0,
-                    chiller_active=True,
-                    reasoning="fallback: LLM parse error",
+                    chiller_setpoint_c=obs.chiller_setpoint_c,
+                    chiller_active=obs.chiller_active,
+                    reasoning="fallback: LLM unavailable — holding last known settings",
                 )
 
             action_json = json.dumps(
@@ -340,16 +400,25 @@ def run_task(task_cfg: dict) -> float:
                 error=error_str,
             )
 
-            zone_summary = ", ".join(
-                f"{z.zone_id}={z.cold_aisle_temp_c:.1f}C fan={z.fan_speed_pct:.0f}%"
-                for z in obs.zones
-            )
+            zone_parts = []
+            for z in obs.zones:
+                prev = _prev_temps.get(z.zone_id, z.cold_aisle_temp_c)
+                delta = z.cold_aisle_temp_c - prev
+                _prev_temps[z.zone_id] = z.cold_aisle_temp_c
+                zone_parts.append(
+                    f"{z.zone_id}={z.cold_aisle_temp_c:.1f}C({delta:+.1f}) "
+                    f"fan={z.fan_speed_pct:.0f}% supply={z.supply_air_temp_setpoint_c:.0f}C"
+                )
             history.append(
-                f"Step {step}: {zone_summary} | reward={reward:.2f} | pue={obs.current_pue:.3f}"
+                f"Step {step}: {', '.join(zone_parts)} | "
+                f"pue={obs.current_pue:.3f} | carbon={obs.grid_carbon_intensity} | "
+                f"reward={reward:.2f}"
             )
 
             if done:
                 break
+
+            time.sleep(STEP_SLEEP_SECONDS)
 
         grader = getattr(env, "_grader", None)
         if grader is not None and hasattr(grader, "final_score"):
