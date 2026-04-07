@@ -1,3 +1,13 @@
+---
+title: DC OpenEnv
+emoji: 🏭
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 8000
+pinned: false
+---
+
 # DC-OpenEnv: Data Centre Cooling Environment
 
 An **OpenEnv-compliant reinforcement learning environment** for evaluating LLM agents on data centre cooling control. Built for the OpenEnv Hackathon — three progressively harder tasks challenge an agent to maintain thermal safety, minimise energy waste, and respond to realistic failures across a condensed 24-hour simulation.
