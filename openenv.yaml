@@ -22,24 +22,29 @@ port: 8000
 tasks:
   - id: easy-single-zone
     difficulty: easy
-    max_steps: 48
+    max_steps: 20
     description: >
       Single zone starts at 28.5 °C (overheating). Agent must recover to [18-27 °C]
-      and maintain efficient cooling for 4 simulated hours at peak load.
+      and maintain efficient cooling across 4 simulated hours (14:00-18:00).
+      20 steps × 12 min/step = 4 hr; step_scale=2.4 condenses the original 48-step arc.
   - id: medium-multi-zone
     difficulty: medium
-    max_steps: 48
+    max_steps: 30
     description: >
-      Three zones with diurnal load surge. One zone has a faulty sensor reporting
-      +9-12 °C above true temperature. Agent must infer true state from sensor_confidence
-      and cold_aisle_temp_c, avoid over-cooling, and handle peak load safely.
+      Three zones with diurnal load surge (steps 6-17 in condensed timeline). One zone
+      has a faulty sensor reporting up to +12 °C above true temperature; sensor_confidence
+      degrades to ~0.1 by step ~10. Agent must infer true state, avoid over-cooling, and
+      handle the morning peak load safely across 12 simulated hours (06:00-18:00).
+      30 steps × 24 min/step = 12 hr; step_scale=4.8 condenses the original 144-step arc.
   - id: hard-cascading-failure
     difficulty: hard
-    max_steps: 72
+    max_steps: 40
     description: >
-      Four zones: chiller COP degrades at step 15, chiller goes offline at step 20.
-      Agent must triage — protect CRITICAL priority zones (zone_ai_1, zone_ai_2)
-      even at the expense of LOW priority zones, while minimising carbon cost.
+      Four zones: chiller COP degrades at step 3 (sim-time ~02:24), chiller goes fully
+      offline at step 8 (sim-time ~06:24). Agent must triage — protect CRITICAL priority
+      zones (zone_ai_1, zone_ai_2) even at the expense of LOW priority zones, while
+      minimising carbon cost during the high-carbon window (steps ~11-22).
+      40 steps × 36 min/step = 24 hr; step_scale=7.2 condenses the original 288-step arc.
 
 action_space:
   type: structured

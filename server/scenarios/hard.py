@@ -7,23 +7,26 @@ Four zones:
   zone_storage — medium priority,   200 kW baseline
   zone_infra   — low priority,      120 kW baseline
 
-Fault schedule (injected via FacilityState.chiller_fault_step):
-  Step 15 → COP begins degrading: 3.5 → 0.8 over 5 steps
-  Step 20 → Chiller goes fully offline (chiller_active = False)
+Fault schedule (injected via FacilityState.chiller_fault_step; rescaled by step_scale=7.2):
+  Step 3  → COP begins degrading: 3.5 → 0.8 over 5 degradation steps
+             (rescaled from original step 15; FAULT_START_STEP=3)
+  Step 8  → Chiller goes fully offline (chiller_active = False)
+             (rescaled from original step 20; CHILLER_OFFLINE_STEP=8)
 
-After step 20 the agent has ONLY fan + free-air cooling available.
+After step 8 the agent has ONLY fan + free-air cooling available.
 Outside temperature and wet-bulb follow a realistic 24-hour cycle,
-giving meaningful free-cooling potential only at night (steps 0–30
-and 240–288).
+giving meaningful free-cooling potential only at night (steps 0–4
+and ~33–40 in the condensed timeline, rescaled from 0–30 and 240–288).
 
-Carbon intensity follows the default 24-hr curve:
-  Steps   0–40  : low     (night renewables)
-  Steps  80–160 : high→critical_high (midday grid demand)
-  Steps 200–288 : medium→low (evening wind)
+Carbon intensity follows the default 24-hr curve (condensed step references):
+  Steps  0–6  : low     (night renewables, rescaled from 0–40)
+  Steps 11–22 : high→critical_high (midday grid demand, rescaled from 80–160)
+  Steps 28–40 : medium→low (evening wind, rescaled from 200–288)
 
 Hard termination: any critical zone > 32 °C for 5+ consecutive steps → score = 0.
 
-Episode: 288 steps × 5 min = 24 hours simulated time.
+Episode: 40 steps × 36 min/step = 24 hours simulated time (condensed, step_scale=7.2).
+Thermal physics run at 5-min granularity; clock and load advance at 36-min/step.
 Start time: 00:00 — full diurnal cycle.
 """
 
@@ -132,6 +135,7 @@ def build_hard_scenario(seed: int = 0) -> FacilityState:
         sensor_confidence=1.0,
         base_it_load_kw=500.0,
         it_load_pct=0.72,
+        thermal_mass_kj_per_k=944.0,   # 500/450 × 850
     )
 
     # ── zone_ai_2 — critical, secondary AI inference cluster ──────────────────
@@ -152,6 +156,7 @@ def build_hard_scenario(seed: int = 0) -> FacilityState:
         sensor_confidence=1.0,
         base_it_load_kw=480.0,
         it_load_pct=0.72,
+        thermal_mass_kj_per_k=907.0,   # 480/450 × 850
     )
 
     # ── zone_storage — medium priority ────────────────────────────────────────
@@ -173,6 +178,7 @@ def build_hard_scenario(seed: int = 0) -> FacilityState:
         sensor_confidence=1.0,
         base_it_load_kw=200.0,
         it_load_pct=0.72,
+        thermal_mass_kj_per_k=378.0,   # 200/450 × 850
     )
 
     # ── zone_infra — low priority, monitoring / logging ───────────────────────
@@ -194,6 +200,7 @@ def build_hard_scenario(seed: int = 0) -> FacilityState:
         sensor_confidence=1.0,
         base_it_load_kw=120.0,
         it_load_pct=0.72,
+        thermal_mass_kj_per_k=227.0,   # 120/450 × 850
     )
 
     outside_temps = _hard_outside_temp_curve()

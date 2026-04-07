@@ -82,11 +82,17 @@ class EasyGraderState:
         if in_range:
             self.steps_in_range  += 1
             self.consecutive_safe = consecutive_safe
-            closeness    = 1.0 - abs(zone_temp - TEMP_IDEAL) / 5.0
-            temp_reward  = 0.40 + 0.10 * closeness
+            # Closeness to ideal midpoint
+            closeness          = 1.0 - abs(zone_temp - TEMP_IDEAL) / 5.0
+            # Distance from the nearest safe-band wall (0–4.5 °C), saturates at 3 °C buffer.
+            # This creates a strong gradient away from 26–27 °C so the LLM keeps cooling
+            # rather than declaring victory the moment it crosses 27 °C from above.
+            dist_from_boundary = min(zone_temp - TEMP_MIN, TEMP_MAX - zone_temp)
+            boundary_margin    = min(dist_from_boundary / 3.0, 1.0)
+            temp_reward        = 0.30 + 0.10 * closeness + 0.15 * boundary_margin
             # Compounding stability bonus for sustained streaks
             streak_bonus = 0.05 * min(self.consecutive_safe / 10.0, 1.0)
-            temp_reward  = min(0.55, temp_reward + streak_bonus)
+            temp_reward  = min(0.60, temp_reward + streak_bonus)
         else:
             self.consecutive_safe = 0
             overshoot   = max(0.0, zone_temp - TEMP_MAX)

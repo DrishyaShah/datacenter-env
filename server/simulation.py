@@ -38,8 +38,18 @@ FAN_SPEED_MAX = 100.0
 SUPPLY_AIR_TEMP_MIN = 16.0
 SUPPLY_AIR_TEMP_MAX = 26.0
 
-# Reference delta-T used in cooling-power scaling (°C)
-COOLING_DELTA_T_REF = 15.0
+# Reference delta-T used in cooling-power scaling (°C).
+# Must match the natural hot-aisle rise at design conditions:
+#   heat_in / (max_mass_flow × cp_air) = 441 / (50 × 1.006) ≈ 8.77 °C
+# At REF=15 effective cooling at equilibrium was only 280 kW < 441 kW heat-in,
+# making the zone impossible to cool at any fan speed.  REF=9 gives 468 kW.
+COOLING_DELTA_T_REF = 9.0
+
+# Mass-flow reference: easy zone (480 kW capacity) at 100% fan moves 50 kg/s.
+# All other zones scale proportionally so every zone has the same 6% cooling
+# headroom above heat-in: capacity / (mass_flow_max × 1.006 × REF) ≈ 1.06.
+MASS_FLOW_REF_CAPACITY_KW = 480.0   # easy zone cooling capacity (calibration reference)
+MASS_FLOW_REF_KGS         = 50.0    # mass flow at 100% fan for the reference zone
 
 # Cube-law fan power coefficient (kW at 100 %)
 FAN_POWER_MAX_KW = 8.0
@@ -87,6 +97,7 @@ class ZoneState:
     sensor_confidence: float = 1.0        # [0.0–1.0] reliability weight
     base_it_load_kw: float = 0.0          # baseline load before diurnal variation
     it_load_pct: float = 0.0              # normalised load [0–1]
+    thermal_mass_kj_per_k: float = 850.0  # room thermal mass (kJ/K); scale per zone size
 
     def __post_init__(self):
         if self.base_it_load_kw == 0.0:
@@ -112,8 +123,9 @@ class ZoneState:
 
     @property
     def fan_power_kw(self) -> float:
-        """Fan electrical power (cube law)."""
-        return FAN_POWER_MAX_KW * (self.fan_speed_pct / 100.0) ** 3
+        """Fan electrical power (cube law), scaled by zone cooling capacity."""
+        capacity_ratio = self.cooling_capacity_kw / MASS_FLOW_REF_CAPACITY_KW
+        return FAN_POWER_MAX_KW * capacity_ratio * (self.fan_speed_pct / 100.0) ** 3
 
     # ── Thermal step ──────────────────────────────────────────────────────────
 
@@ -139,7 +151,7 @@ class ZoneState:
 
         net_kw = heat_in_kw - effective_cooling_kw - envelope_kw
         net_kj = net_kw * SECONDS_PER_STEP
-        delta_temp = net_kj / THERMAL_MASS_KJ_PER_K
+        delta_temp = net_kj / self.thermal_mass_kj_per_k   # per-zone thermal mass
         # delta_temp = max(-5.0, min(5.0, delta_temp))
         delta_temp = max(-2.0, min(2.0, delta_temp))
         self.temp_c = round(self.temp_c + delta_temp, 3)
@@ -150,14 +162,25 @@ class ZoneState:
         #     self.temp_c + (heat_in_kw / denominator) * HOT_AISLE_RISE_COEFF, 3
         # )
         # self.hot_aisle_temp_c = max(self.hot_aisle_temp_c, self.temp_c + 1.0)
-        mass_flow = 50.0 * (self.fan_speed_pct / 100.0)  # kg/s
-        if mass_flow > 0.5:
+
+        # Mass flow scales with zone cooling capacity so every zone has the
+        # same ~6% cooling headroom above heat-in (fixes small-zone uncoolability).
+        mass_flow = (
+            (self.cooling_capacity_kw / MASS_FLOW_REF_CAPACITY_KW)
+            * MASS_FLOW_REF_KGS
+            * (self.fan_speed_pct / 100.0)
+        )  # kg/s
+        if self.fan_speed_pct > 0.5:
             self.hot_aisle_temp_c = round(
                 supply_air_temp_c + heat_in_kw / (mass_flow * 1.006), 3
             )
         else:
             self.hot_aisle_temp_c = round(min(supply_air_temp_c + 50.0, 85.0), 3)
         self.supply_air_temp_c = supply_air_temp_c
+
+        # Cold-aisle temperature floor: the zone cannot be colder than the
+        # supply air being delivered into it (physically impossible).
+        self.temp_c = round(max(self.temp_c, supply_air_temp_c), 3)
 
         # Humidity heuristic
         if self.temp_c > 26:
@@ -199,6 +222,7 @@ class FacilityState:
     load_curve: List[float] = field(default_factory=list)           # 24-hr normalised [0–1]
     pid_baseline_pue: float = 1.55             # pre-computed PID reference PUE
     grid_carbon_intensity_normalized: float = 0.5  # [0–1] numeric companion
+    minutes_per_step: float = 5.0                  # sim minutes per env step; set by environment.py for timeline condensation
 
     # ── Convenience constants ─────────────────────────────────────────────────
     _BASE_CHILLER_COP: float = field(default=3.5, init=False, repr=False)
@@ -221,11 +245,29 @@ class FacilityState:
         return sum(z.fan_power_kw for z in self.zones)
 
     @property
+    def effective_chiller_cop(self) -> float:
+        """
+        COP adjusted for supply-water temperature and outdoor conditions.
+
+        Real-world behaviour:
+          - Higher leaving-water temp (chiller_setpoint_c) → less compression work → higher COP.
+          - Higher outdoor temp → harder heat rejection → lower COP.
+        Fault degradation overrides temperature adjustment: once inject_chiller_fault()
+        has modified self.chiller_cop, that modified value is used as-is.
+        """
+        if self.chiller_fault_level > 0:
+            return self.chiller_cop   # fault path; COP already degraded
+        cop = self._BASE_CHILLER_COP
+        cop *= (1.0 + 0.03 * (self.chiller_setpoint_c - 10.0))   # +3 % per °C higher setpoint
+        cop *= (1.0 - 0.02 * max(0.0, self.outside_temp_c - 20.0))  # −2 % per °C outdoor > 20
+        return max(1.0, min(6.0, cop))
+
+    @property
     def chiller_power_kw(self) -> float:
         if not self.chiller_active:
             return 0.0
         total_cooling = sum(z.actual_cooling_kw for z in self.zones)
-        cop = max(self.chiller_cop, 0.01)
+        cop = max(self.effective_chiller_cop, 0.01)
         return total_cooling / cop
 
     @property
@@ -237,8 +279,8 @@ class FacilityState:
     # ── Time advancement ──────────────────────────────────────────────────────
 
     def advance_time(self):
-        """Tick clock forward by one step (5 minutes)."""
-        self.timestamp_hour = (self.timestamp_hour + SECONDS_PER_STEP / 3600.0) % 24.0
+        """Tick clock forward by one step (minutes_per_step minutes)."""
+        self.timestamp_hour = (self.timestamp_hour + self.minutes_per_step / 60.0) % 24.0
         self.step_number += 1
 
     # ── Load advancement ──────────────────────────────────────────────────────
@@ -293,12 +335,19 @@ class FacilityState:
         """
         Gradually drift faulty zone sensors over time.
         Confidence decreases proportionally as drift grows.
+
+        Uses an effective step scaled by minutes_per_step so that drift
+        reaches its maximum at the same simulated time regardless of
+        whether the episode is condensed (larger minutes_per_step).
+        At 5 min/step the sensor stabilises at ~12 °C around step 50.
+        At 24 min/step (medium condensed) it stabilises around step 10.
         """
         for zone in self.zones:
             if not zone.sensor_faulty:
                 continue
-            # Drift grows linearly until it stabilises around +12 °C at step 50
-            target_drift = min(3.0 + step * 0.18, 12.0)
+            # Scale step by how many 5-min periods this step represents
+            effective_step = int(step * self.minutes_per_step / 5.0)
+            target_drift = min(3.0 + effective_step * 0.18, 12.0)
             zone.sensor_drift_c = round(target_drift, 2)
             # Confidence shrinks from 1.0 → ~0.1 as drift grows from 0 → 12
             zone.sensor_confidence = round(max(0.1, 1.0 - zone.sensor_drift_c / 13.0), 3)
@@ -364,8 +413,16 @@ class FacilityState:
         for each zone, accounting for chiller COP and free-cooling potential.
 
         When the chiller is offline, supply air approaches outdoor wet-bulb.
+
+        Free-cooling (economiser) blending is only applied when outdoor air
+        is actually cooler than what the chiller delivers.  If the wet-bulb
+        temperature is above the chilled-supply setpoint — e.g. a hot summer
+        day with wet-bulb=22 °C and supply setpoint=18 °C — blending outdoor
+        air would *raise* the supply temperature and reduce cooling effectiveness.
+        In that case, the chilled supply is used as-is.
         """
         free_cooling = self.compute_free_cooling_potential()
+        free_cooling_air_temp = self.wet_bulb_temp_c + 2.0
 
         for zone in self.zones:
             if self.chiller_active:
@@ -375,12 +432,18 @@ class FacilityState:
                 # Agent setpoint is bounded below by what the chiller can deliver
                 chilled_supply = max(zone.supply_air_temp_setpoint_c, chiller_floor)
             else:
-                chilled_supply = self.wet_bulb_temp_c + 2.0
+                chilled_supply = free_cooling_air_temp
 
-            effective_supply = (
-                free_cooling * (self.wet_bulb_temp_c + 2.0)
-                + (1.0 - free_cooling) * chilled_supply
-            )
+            # Only blend outdoor (free-cooling) air when it is colder than the
+            # chilled supply — otherwise free cooling would warm, not cool.
+            if free_cooling > 0.0 and free_cooling_air_temp < chilled_supply:
+                effective_supply = (
+                    free_cooling * free_cooling_air_temp
+                    + (1.0 - free_cooling) * chilled_supply
+                )
+            else:
+                effective_supply = chilled_supply
+
             zone.supply_air_temp_c = round(
                 max(SUPPLY_AIR_TEMP_MIN, min(effective_supply, SUPPLY_AIR_TEMP_MAX)), 2
             )

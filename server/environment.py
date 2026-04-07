@@ -71,14 +71,16 @@ def _reward_detail_as_dict(detail: Any) -> Dict[str, Any]:
 
 TASK_CONFIGS: Dict[str, Dict[str, Any]] = {
     "easy-single-zone": {
-        "max_steps": 48,
+        "max_steps": 20,       # 20 steps × 12 min/step = 4 hr (full 14:00–18:00 arc)
+        "step_scale": 2.4,     # condense original 48-step plan: idx = step * 2.4
         "scenario_builder": build_easy_scenario,
         "grader_class": EasyGraderState,
         "description": "Single-zone thermal runaway recovery under steady load",
         "hard_termination": False,
     },
     "medium-multi-zone": {
-        "max_steps": 48,
+        "max_steps": 30,       # 30 steps × 24 min/step = 12 hr (full 06:00–18:00 arc)
+        "step_scale": 4.8,     # condense original 144-step plan: idx = step * 4.8
         "scenario_builder": build_medium_scenario,
         "grader_class": MediumGrader,
         "description": "3-zone load surge with faulty sensor and diurnal variation",
@@ -86,7 +88,8 @@ TASK_CONFIGS: Dict[str, Dict[str, Any]] = {
         "hard_term_mode": "violation_streak",   # 10+ consecutive steps any zone unsafe
     },
     "hard-cascading-failure": {
-        "max_steps": 72,
+        "max_steps": 40,       # 40 steps × 36 min/step = 24 hr (full 00:00–24:00 arc)
+        "step_scale": 7.2,     # condense original 288-step plan: idx = step * 7.2
         "scenario_builder": build_hard_scenario,
         "grader_class": HardGrader,
         "description": "4-zone cascading chiller failure with carbon-aware triage",
@@ -142,6 +145,9 @@ class DCEnvironment(Environment):
         # Base chiller COP (captured at reset for fault detection)
         self._base_chiller_cop: float = 3.5
 
+        # Timeline condensation scale factor (set properly in reset())
+        self._step_scale: float = self.config.get("step_scale", 1.0)
+
     # ── OpenEnv interface ──────────────────────────────────────────────────────
 
     def reset(self) -> ResetResult:
@@ -153,6 +159,19 @@ class DCEnvironment(Environment):
         self._done = False
         self._episode_rewards = []
         self._history.clear()
+
+        # Configure timeline condensation: each env step covers step_scale×5 sim minutes.
+        # This drives the clock, load, carbon and sensor drift at the right rate so the
+        # full scenario arc (4 / 12 / 24 hr) is covered within the reduced step budget.
+        # Thermal physics keep their 5-min granularity (step_thermal uses SECONDS_PER_STEP).
+        self._step_scale: float = self.config.get("step_scale", 1.0)
+        self._facility.minutes_per_step = 5.0 * self._step_scale
+
+        # Rescale scenario events that are indexed by raw step number so they
+        # fire at the proportionally correct point in the condensed timeline.
+        if self._facility.chiller_fault_step > 0:
+            scaled_fault = max(3, round(self._facility.chiller_fault_step / self._step_scale))
+            self._facility.chiller_fault_step = scaled_fault
 
         # Capture base COP for fault-detection heuristic
         self._base_chiller_cop = self._facility.chiller_cop
@@ -180,9 +199,14 @@ class DCEnvironment(Environment):
 
         # Advance simulation (rate-limiting + physics + time inside .step())
         step_info = self._facility.step(sim_action, self._last_action)
-        # Apply diurnal weather curve if the scenario provided one
+        # Apply diurnal weather curve if the scenario provided one.
+        # Multiply step_count by step_scale so that the full curve (144 or 288 elements)
+        # is traversed within the condensed step budget, covering the complete scenario arc.
         if hasattr(self._facility, '_outside_temp_curve'):
-            idx = min(self._step_count, len(self._facility._outside_temp_curve) - 1)
+            idx = min(
+                int(self._step_count * self._step_scale),
+                len(self._facility._outside_temp_curve) - 1,
+            )
             self._facility.outside_temp_c = self._facility._outside_temp_curve[idx]
             self._facility.wet_bulb_temp_c = self._facility._wet_bulb_curve[idx]
         self._last_action = sim_action

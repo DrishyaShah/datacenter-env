@@ -3,19 +3,21 @@ Medium scenario: "Multi-Zone Load Surge with Sensor Fault"
 
 Three zones:
   zone_ai      — critical priority, 600 kW baseline, FAULTY sensor (+3 °C drift,
-                 growing to +12 °C by step 50; sensor_confidence degrades 1.0 → 0.1)
+                 growing to +12 °C by effective step ~50 (real step ~10 at step_scale=4.8);
+                 sensor_confidence degrades 1.0 → ~0.1 by step ~10)
   zone_storage — medium priority, 200 kW baseline
   zone_infra   — low priority, 150 kW baseline
 
 IT load follows a diurnal curve that surges from ~60 % → ~95 % between
-steps 30–60 (morning batch window, starting at 06:00).
+steps 6–17 in the condensed timeline (morning batch window, rescaled from 30–60).
 Outside temperature varies: starts at 18 °C (night), peaks at 34 °C around
-step 96 (noon).
+step ~20 in the condensed timeline (noon, rescaled from step 96).
 
-Episode: 144 steps × 5 min = 12 hours simulated time.
+Episode: 30 steps × 24 min/step = 12 hours simulated time (condensed, step_scale=4.8).
+Thermal physics run at 5-min granularity; clock and load advance at 24-min/step.
 Start time: 06:00 — diurnal ramp-up begins immediately.
 
-Hard termination: any zone unsafe for 3+ consecutive steps → episode ends.
+Hard termination: any zone unsafe for 10+ consecutive steps → episode ends.
 """
 
 import math
@@ -107,6 +109,7 @@ def build_medium_scenario(seed: int = 0) -> FacilityState:
         sensor_confidence=0.77,     # 1.0 - 3.0/13.0 ≈ 0.77
         base_it_load_kw=600.0,
         it_load_pct=0.60,           # load at 60 % at 06:00
+        thermal_mass_kj_per_k=1133.0,  # 600/450 × 850
     )
 
     # ── zone_storage — medium priority, healthy sensor ────────────────────────
@@ -127,6 +130,7 @@ def build_medium_scenario(seed: int = 0) -> FacilityState:
         sensor_confidence=1.0,
         base_it_load_kw=200.0,
         it_load_pct=0.60,
+        thermal_mass_kj_per_k=378.0,   # 200/450 × 850
     )
 
     # ── zone_infra — low priority, healthy sensor ─────────────────────────────
@@ -147,6 +151,7 @@ def build_medium_scenario(seed: int = 0) -> FacilityState:
         sensor_confidence=1.0,
         base_it_load_kw=150.0,
         it_load_pct=0.60,
+        thermal_mass_kj_per_k=283.0,   # 150/450 × 850
     )
 
     outside_temps = _medium_outside_temp_curve()

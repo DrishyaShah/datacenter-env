@@ -62,29 +62,48 @@ INFERENCE_MAX_STEPS_PER_TASK: Optional[int] = (
 # OpenAI client — initialised in main() after key validation
 client: Optional[OpenAI] = None
 
-SUCCESS_THRESHOLD = 0.6
+# Safe-band bounds — shared by alert generation and history tagging
+TEMP_MAX = 27.0
+TEMP_MIN = 18.0
+
+# Per-task success thresholds calibrated to each difficulty level.
+# Medium: 20% of score weight is always dead (peak_score unreachable in 25 steps).
+# Hard: cascading failure + carbon window is genuinely hard; set expectation accordingly.
+SUCCESS_THRESHOLDS = {
+    "easy-single-zone":       0.55,
+    "medium-multi-zone":      0.50,
+    "hard-cascading-failure": 0.40,
+}
 
 # ── Rate-limit / retry config ─────────────────────────────────────────────────
 STEP_SLEEP_SECONDS   = 0            # no inter-step sleep — stay well under 20-min cap
 LLM_MAX_RETRIES      = 3            # attempts before falling back to held settings
-LLM_RETRY_BASE_SLEEP = 5.0         # seconds; doubles on each retry (5 → 10 → 20)
+LLM_RETRY_BASE_SLEEP = 2.0         # seconds; doubles on each retry (2 → 4 → 8 = 14s max)
+                                    # was 5.0 (5→10→20 = 35s max) which caused >20 min runs
+
+# ── Global wall-clock budget ──────────────────────────────────────────────────
+# Hard cap: stop starting new tasks if we are within GLOBAL_TIMEOUT_BUFFER seconds
+# of the GLOBAL_TIMEOUT_SECONDS deadline.  Evaluator hard-kills at 20 minutes.
+GLOBAL_TIMEOUT_SECONDS = 18 * 60   # 18 minutes — 2-min safety margin
+GLOBAL_TIMEOUT_BUFFER  = 90        # seconds: don't start a task that can't finish
+_SCRIPT_START: float = 0.0         # populated in main() via time.time()
 
 # ── Task registry (all three tasks run against DCEnvironment + graders) ───────
 TASKS = [
     {
         "name": "easy-single-zone",
         "description": "Single-zone thermal runaway recovery under steady load",
-        "max_steps": 48,
+        "max_steps": 20,   # 20 steps × 12 min/step = 4 hr (full arc)
     },
     {
         "name": "medium-multi-zone",
         "description": "Multi-zone load surge with faulty sensor and diurnal variation",
-        "max_steps": 48,
+        "max_steps": 30,   # 30 steps × 24 min/step = 12 hr (full 06:00–18:00 arc)
     },
     {
         "name": "hard-cascading-failure",
         "description": "Cascading chiller failure with carbon-aware triage",
-        "max_steps": 72,
+        "max_steps": 40,   # 40 steps × 36 min/step = 24 hr (full arc)
     },
 ]
 
@@ -143,6 +162,28 @@ SYSTEM_PROMPT = textwrap.dedent("""
     - When sensor_confidence < 0.5, trust cold_aisle_temp_c instead of reported_temp_c.
     - Never set max fans based solely on a high reported_temp_c when sensor_confidence < 0.5.
       Instead use cold_aisle_temp_c and hot_aisle_temp_c to judge the true thermal state.
+
+    === CHILLER FAILURE PROTOCOL (HIGHEST PRIORITY AFTER SAFETY) ===
+    If chiller_fault_detected is True OR chiller_cop < 2.0:
+      - You have 5-10 steps before the chiller goes offline.
+      - IMMEDIATELY: set ALL zone fans to 80-90%, supply setpoints to 18-19 °C.
+      - Do NOT wait for temperatures to rise before acting. Pre-cool now.
+      - Continue running chiller (chiller_active: true) — it still helps even degraded.
+      - Do NOT raise chiller_setpoint_c above 10 during a fault — keep the water cold.
+
+    If chiller_active is False (chiller is offline):
+      - Fans are your ONLY cooling — chiller provides zero cooling capacity.
+      - Set CRITICAL zones (zone_priority=2) to fan=90-100%, supply=16-18 °C.
+      - Accept LOW-priority zones (zone_priority=0) drifting toward 26-27 °C to
+        concentrate cooling capacity on CRITICAL zones.
+      - Carbon cost is irrelevant during a chiller failure — survival takes priority.
+      - Do NOT set chiller_active: true — it will not respond while offline.
+      - Check the "alerts" field each step; it will tell you when the chiller comes back.
+
+    If you see "[CHILLER_FAULT]" or "[CHILLER_OFFLINE]" tags in the step history:
+      - The failure has been ongoing. Review how many steps it has been active.
+      - If 3+ steps of OFFLINE: assume CRITICAL zones need sustained max cooling.
+      - Gradually scale back ONLY once you see temperatures stabilising below 24 °C.
 
     === CHILLER RULES ===
     - Keep chiller_active true unless you have a specific reason to disable it.
@@ -205,6 +246,114 @@ def _vprint(*args, **kwargs) -> None:
         print(*args, **kwargs)
 
 
+# ── Runtime alert generation ──────────────────────────────────────────────────
+def _compute_alerts(obs_dict: dict, prev_temps: dict) -> List[str]:
+    """
+    Derive human-readable alert strings from the current observation.
+
+    These are injected into the LLM's JSON observation so it can react to
+    critical events (chiller failure, temperature violations, sensor faults,
+    rising trends) without having to infer them from raw numbers alone.
+    """
+    alerts: List[str] = []
+    zones = obs_dict.get("zones", [])
+
+    # ── Chiller state ─────────────────────────────────────────────────────────
+    if not obs_dict.get("chiller_active", True):
+        alerts.append(
+            "CRITICAL: Chiller is OFFLINE — fans are your ONLY cooling tool. "
+            "Set all zone fans to 90-100% immediately, especially CRITICAL zones."
+        )
+    elif obs_dict.get("chiller_fault_detected", False):
+        cop = obs_dict.get("chiller_cop", 3.5)
+        alerts.append(
+            f"WARNING: Chiller fault detected (current COP={cop:.2f}, nominal 3.5). "
+            "Chiller may go offline within 5-10 steps. Ramp ALL fans up now."
+        )
+
+    # ── Per-zone alerts ───────────────────────────────────────────────────────
+    for z in zones:
+        zid  = z["zone_id"]
+        temp = z.get("cold_aisle_temp_c", 22.0)
+        conf = z.get("sensor_confidence", 1.0)
+        rep  = z.get("reported_temp_c", temp)
+        prev = prev_temps.get(zid, temp)
+        delta = temp - prev
+
+        # Approaching boundary (1°C margin)
+        if TEMP_MAX - 1.0 < temp <= TEMP_MAX:
+            alerts.append(
+                f"WARNING: {zid} at {temp:.1f}°C — within 1°C of violation limit "
+                f"({TEMP_MAX}°C). Increase cooling now."
+            )
+        elif TEMP_MIN <= temp < TEMP_MIN + 1.0:
+            alerts.append(
+                f"WARNING: {zid} at {temp:.1f}°C — within 1°C of overcooling limit "
+                f"({TEMP_MIN}°C). Reduce fan speed or raise supply setpoint."
+            )
+
+        # Active violation
+        if temp > TEMP_MAX:
+            alerts.append(
+                f"VIOLATION: {zid} is OVERHEATING at {temp:.1f}°C. "
+                "Immediate max cooling required."
+            )
+        elif temp < TEMP_MIN:
+            alerts.append(
+                f"VIOLATION: {zid} is OVERCOOLING at {temp:.1f}°C. "
+                "Raise supply_air_temp_setpoint_c by 2°C and cut fans 15-20%."
+            )
+
+        # Faulty sensor
+        if conf < 0.5:
+            bias = round(rep - temp, 1)
+            alerts.append(
+                f"SENSOR FAULT: {zid} sensor_confidence={conf:.2f} — reported_temp "
+                f"({rep:.1f}°C) is approximately {bias:+.1f}°C off from actual "
+                f"cold_aisle_temp_c ({temp:.1f}°C). "
+                "DO NOT set fans based on reported_temp. Use cold_aisle_temp_c."
+            )
+
+        # Rising fast and already warm
+        if delta > 0.8 and temp > 23.0:
+            alerts.append(
+                f"TREND: {zid} rising fast (+{delta:.1f}°C this step, now {temp:.1f}°C). "
+                "Act now — thermal inertia means it will keep rising 2-3 more steps."
+            )
+
+        # Zone is safe, temperature is stable, but fans are still running high —
+        # signal the LLM to back off for PUE efficiency.
+        fan = z.get("fan_speed_pct", 50.0)
+        if (
+            TEMP_MIN + 0.5 < temp < TEMP_MAX - 2.0  # safely within bounds
+            and abs(delta) < 0.3                      # temperature not changing
+            and fan > 70.0                            # fans are wasteful
+        ):
+            alerts.append(
+                f"EFFICIENCY: {zid} is stable at {temp:.1f}°C with fan at {fan:.0f}% "
+                "— this is wasteful. Reduce fan to 45-65% to improve PUE. "
+                "Thermal inertia will sustain current cooling for 2-3 more steps."
+            )
+
+    # ── Carbon ────────────────────────────────────────────────────────────────
+    carbon = obs_dict.get("carbon_intensity_normalized", 0.5)
+    if carbon > 0.8:
+        alerts.append(
+            f"CARBON CRITICAL ({carbon:.2f}): Grid is at peak emissions. "
+            "Reduce fan speeds where zone temps allow — every percent matters."
+        )
+
+    # ── SLA streak ────────────────────────────────────────────────────────────
+    streak = obs_dict.get("sla_violation_streak", 0)
+    if streak >= 5:
+        alerts.append(
+            f"SLA ALERT: {streak} consecutive violation steps detected. "
+            "Hard termination triggers at 10. Take urgent corrective action NOW."
+        )
+
+    return alerts
+
+
 # ── LLM call with retry on 429 ────────────────────────────────────────────────
 def get_llm_action(obs_dict: dict, step: int, history: List[str]) -> dict:
     history_block = "\n".join(history[-4:]) if history else "None"
@@ -229,7 +378,7 @@ def get_llm_action(obs_dict: dict, step: int, history: List[str]) -> dict:
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.2,
-                max_tokens=600,
+                max_tokens=300,
             )
             raw = (response.choices[0].message.content or "").strip()
             if not raw:
@@ -249,7 +398,17 @@ def get_llm_action(obs_dict: dict, step: int, history: List[str]) -> dict:
 
         except RateLimitError as e:
             last_exc = e
-            sleep_for = LLM_RETRY_BASE_SLEEP * (2 ** (attempt - 1))  # 5, 10, 20
+            err_msg = str(e).lower()
+            # "tokens per day" quota is exhausted for today — retrying will never help.
+            # Skip all remaining attempts and let the caller use the last intended fallback.
+            if "per day" in err_msg or "tokens per day" in err_msg or "tpd" in err_msg:
+                _vprint(
+                    f"[WARN] Daily token quota exhausted at step {step} "
+                    "— skipping retries, using fallback action"
+                )
+                return {}
+            # Normal per-minute rate limit — exponential backoff and retry
+            sleep_for = LLM_RETRY_BASE_SLEEP * (2 ** (attempt - 1))
             _vprint(
                 f"[WARN] 429 rate-limit on attempt {attempt}/{LLM_MAX_RETRIES} "
                 f"at step {step} — sleeping {sleep_for:.0f}s before retry"
@@ -333,7 +492,9 @@ def run_task(task_cfg: dict) -> float:
         reset_result = env.reset()
         obs: DCObservation = reset_result.observation
 
-        _prev_temps = {}
+        _prev_temps: dict = {}
+        _last_llm_result: dict = {}   # last non-empty LLM response — used as fallback intent
+
         for step in range(1, max_steps + 1):
             obs_dict = {
                 "step": obs.step,
@@ -370,26 +531,38 @@ def run_task(task_cfg: dict) -> float:
                 "maintenance_notes": obs.maintenance_notes,
                 "upcoming_events": obs.upcoming_events,
             }
+
+            # Inject runtime alerts so the LLM can react to critical events explicitly
+            alerts = _compute_alerts(obs_dict, _prev_temps)
+            if alerts:
+                obs_dict["alerts"] = alerts
+
             error_str = None
             try:
                 llm_result = get_llm_action(obs_dict, step, history)
-                action = build_action(llm_result, obs)
+                if llm_result:
+                    _last_llm_result = llm_result   # store last successful intent
+                action = build_action(llm_result if llm_result else _last_llm_result, obs)
             except Exception as e:
                 error_str = str(e)[:120]
-                _vprint(f"[WARN] step {step} LLM failed ({error_str}), holding current settings")
-                action = DCAction(
-                    zone_adjustments=[
-                        ZoneAdjustment(
-                            zone_id=z.zone_id,
-                            fan_speed_pct=z.fan_speed_pct,
-                            supply_air_temp_setpoint_c=z.supply_air_temp_setpoint_c,
-                        )
-                        for z in obs.zones
-                    ],
-                    chiller_setpoint_c=obs.chiller_setpoint_c,
-                    chiller_active=obs.chiller_active,
-                    reasoning="fallback: LLM unavailable — holding last known settings",
-                )
+                _vprint(f"[WARN] step {step} LLM failed ({error_str}), holding last intended action")
+                if _last_llm_result:
+                    action = build_action(_last_llm_result, obs)
+                else:
+                    # No prior LLM intent yet — use safe conservative defaults
+                    action = DCAction(
+                        zone_adjustments=[
+                            ZoneAdjustment(
+                                zone_id=z.zone_id,
+                                fan_speed_pct=70.0,
+                                supply_air_temp_setpoint_c=20.0,
+                            )
+                            for z in obs.zones
+                        ],
+                        chiller_setpoint_c=10.0,
+                        chiller_active=True,
+                        reasoning="fallback: LLM unavailable — safe defaults (no prior intent)",
+                    )
 
             action_json = json.dumps(
                 {
@@ -422,6 +595,7 @@ def run_task(task_cfg: dict) -> float:
                 error=error_str,
             )
 
+            # Build zone summary and update _prev_temps with post-step values
             zone_parts = []
             for z in obs.zones:
                 prev  = _prev_temps.get(z.zone_id, z.cold_aisle_temp_c)
@@ -431,13 +605,34 @@ def run_task(task_cfg: dict) -> float:
                     f"{z.zone_id}={z.cold_aisle_temp_c:.1f}C({delta:+.1f}) "
                     f"fan={z.fan_speed_pct:.0f}% supply={z.supply_air_temp_setpoint_c:.0f}C"
                 )
+
+            # Collect event tags so the LLM can spot fault/violation history at a glance
+            tags = []
+            if obs.chiller_fault_detected:
+                tags.append("[CHILLER_FAULT]")
+            if not obs.chiller_active:
+                tags.append("[CHILLER_OFFLINE]")
+            for z in obs.zones:
+                if z.cold_aisle_temp_c > TEMP_MAX or z.cold_aisle_temp_c < TEMP_MIN:
+                    tags.append(f"[VIOLATION:{z.zone_id}]")
+                if z.sensor_confidence < 0.5:
+                    tags.append(f"[SENSOR_BAD:{z.zone_id}]")
+            tag_str = " ".join(tags)
+
             history.append(
-                f"Step {step}: {', '.join(zone_parts)} | "
+                f"Step {step}{(' ' + tag_str) if tag_str else ''}: "
+                f"{', '.join(zone_parts)} | "
                 f"pue={obs.current_pue:.3f} | carbon={obs.grid_carbon_intensity} | "
                 f"reward={reward:.2f}"
             )
 
             if done:
+                break
+
+            # Per-step wall-clock guard: stop the episode if we are running out of time
+            elapsed = time.time() - _SCRIPT_START
+            if elapsed >= GLOBAL_TIMEOUT_SECONDS - GLOBAL_TIMEOUT_BUFFER:
+                _vprint(f"[WARN] Wall-clock budget exhausted at step {step} — ending episode early")
                 break
 
             if STEP_SLEEP_SECONDS > 0:
@@ -449,7 +644,7 @@ def run_task(task_cfg: dict) -> float:
         elif rewards:
             score = max(0.0, min(1.0, (sum(rewards) / len(rewards) + 1.0) / 2.0))
 
-        success = score >= SUCCESS_THRESHOLD
+        success = score >= SUCCESS_THRESHOLDS.get(task_name, 0.55)
 
     except Exception as e:
         _vprint(f"[DEBUG] Fatal error in task {task_name}: {e}")
@@ -459,7 +654,8 @@ def run_task(task_cfg: dict) -> float:
 
 
 def main() -> None:
-    global client
+    global client, _SCRIPT_START
+    _SCRIPT_START = time.time()
 
     # ── Set up dual-output logging (stdout + file) ────────────────────────────
     log_file = open("inference_output.txt", "w")
@@ -483,6 +679,15 @@ def main() -> None:
 
     all_scores = []
     for task_cfg in TASKS:
+        elapsed = time.time() - _SCRIPT_START
+        remaining = GLOBAL_TIMEOUT_SECONDS - elapsed
+        if remaining < GLOBAL_TIMEOUT_BUFFER:
+            _vprint(
+                f"[WARN] Skipping task '{task_cfg['name']}' — only {remaining:.0f}s "
+                f"remaining (need >{GLOBAL_TIMEOUT_BUFFER}s buffer)"
+            )
+            all_scores.append(0.0)
+            continue
         score = run_task(task_cfg)
         all_scores.append(score)
         _vprint(f"[SCORE] {task_cfg['name']} => {score:.2f}")

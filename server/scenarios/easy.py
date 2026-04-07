@@ -8,7 +8,8 @@ Grid: medium carbon. No faults. Full cooling capacity available.
 Agent must bring the zone back into [18-27 °C], then maintain it
 efficiently — not just pin fans at 100 % forever.
 
-Episode: 48 steps x 5 min = 4 hours of simulated time.
+Episode: 20 steps × 12 min/step = 4 hours of simulated time (condensed, step_scale=2.4).
+Thermal physics run at 5-min granularity; clock and load advance at 12-min/step.
 Start time: 14:00 (peak carbon / peak outside temperature).
 """
 
@@ -66,6 +67,7 @@ def build_easy_scenario(seed: int = 0) -> FacilityState:
         sensor_confidence=1.0,
         base_it_load_kw=_IT_LOAD_KW,
         it_load_pct=1.0,
+        thermal_mass_kj_per_k=850.0,   # reference zone; matches global default
     )
 
     # Easy scenario uses a flat load curve — no diurnal variation.

@@ -33,8 +33,8 @@ TEMP_IDEAL = 22.0
 IDEAL_PUE = 1.15
 
 # ── Peak load window (steps where IT load surges) ─────────────────────────────
-PEAK_LOAD_START = 30
-PEAK_LOAD_END   = 80
+PEAK_LOAD_START = 6    # was 30; rescaled for 30-step / 12-hr budget: 30/4.8 ≈ 6
+PEAK_LOAD_END   = 17   # was 80; rescaled for 30-step / 12-hr budget: 80/4.8 ≈ 17
 
 # ── Faulty sensor zone ────────────────────────────────────────────────────────
 FAULTY_ZONE_ID = "zone_ai"

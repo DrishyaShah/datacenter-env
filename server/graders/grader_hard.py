@@ -11,14 +11,14 @@ Scoring criteria (deterministic, reproducible):
 Final score breakdown [0.0–1.0]:
   30% — SLA compliance (critical zone safety)
   25% — Carbon efficiency during high-carbon windows
-  20% — Recovery speed after chiller failure (steps 20–50)
+  20% — Recovery speed after chiller failure (steps 8–16)
   15% — Triage quality
   10% — Reasoning coherence
 
-Chiller failure timeline (hard scenario):
-  Step 15: COP begins degrading (observable via chiller_fault_detected)
-  Step 20: Chiller fully offline
-  Steps 20–50: Recovery window — agent must restabilize using fans + free cooling only
+Chiller failure timeline (condensed 40-step / 24-hr episode, step_scale=7.2):
+  Step 3: COP begins degrading (FAULT_START_STEP; observable via chiller_fault_detected)
+  Step 8: Chiller fully offline (CHILLER_OFFLINE_STEP = FAULT_START_STEP + 5 degradation steps)
+  Steps 8–16: Recovery window (RECOVERY_WINDOW_END=16) — agent must restabilize using fans + free cooling only
 """
 
 import re
@@ -33,9 +33,9 @@ CRITICAL_THRESHOLD = 30.0   # hard SLA limit for critical zones
 EMERGENCY_THRESHOLD = 35.0  # maximum penalty threshold
 
 # ── Fault timeline ─────────────────────────────────────────────────────────────
-FAULT_START_STEP    = 15    # COP begins degrading
-CHILLER_OFFLINE_STEP = 20   # chiller fully offline
-RECOVERY_WINDOW_END  = 50   # end of recovery assessment window
+FAULT_START_STEP    = 3     # COP begins degrading (was 15; rescaled for 40-step / 24-hr budget: 15/7.2 ≈ 2 → use 3 for pre-fault window)
+CHILLER_OFFLINE_STEP = 8    # chiller fully offline (was 20; = FAULT_START_STEP + 5 degradation steps)
+RECOVERY_WINDOW_END  = 16   # end of recovery assessment window (was 50; ≈ 40% of 40-step episode)
 
 # ── Carbon thresholds ──────────────────────────────────────────────────────────
 HIGH_CARBON_THRESHOLD = 0.55   # carbon_intensity_normalized above this = high carbon
@@ -85,15 +85,15 @@ class HardGrader:
     steps_critical_safe: int       = 0   # steps where ALL critical zones are safe
 
     # ── PUE by phase ──────────────────────────────────────────────────────────
-    pre_fault_pue:  List[float] = field(default_factory=list)   # steps 0–14
-    post_fault_pue: List[float] = field(default_factory=list)   # steps 20+
+    pre_fault_pue:  List[float] = field(default_factory=list)   # steps 0–2  (before FAULT_START_STEP=3)
+    post_fault_pue: List[float] = field(default_factory=list)   # steps 8+   (from CHILLER_OFFLINE_STEP=8)
 
     # ── Carbon tracking ───────────────────────────────────────────────────────
     carbon_cost_total: float           = 0.0
     high_carbon_cooling_kw: List[float] = field(default_factory=list)  # proxy values
 
     # ── Recovery window ───────────────────────────────────────────────────────
-    # Steps 20–50: track how many of these steps have all critical zones in safe band
+    # Steps 8–16 (CHILLER_OFFLINE_STEP to RECOVERY_WINDOW_END): track how many of these steps have all critical zones in safe band
     recovery_steps_total:  int = 0
     recovery_steps_safe:   int = 0
 
@@ -315,7 +315,7 @@ class HardGrader:
             avg_high_carbon_cooling = sum(self.high_carbon_cooling_kw) / len(self.high_carbon_cooling_kw)
             carbon_score = max(0.0, 1.0 - avg_high_carbon_cooling)
         else:
-            carbon_score = 1.0   # no high-carbon window occurred → full credit
+            carbon_score = 0.5   # episode ended before any high-carbon window — neutral credit
 
         # ── Recovery speed ────────────────────────────────────────────────────
         if self.recovery_steps_total > 0:
