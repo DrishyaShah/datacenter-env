@@ -133,21 +133,30 @@ class ZoneState:
         delta_t = max(self.hot_aisle_temp_c - supply_air_temp_c, 0.0)
         scaling = delta_t / COOLING_DELTA_T_REF
         effective_cooling_kw = self.actual_cooling_kw * scaling
-
+        effective_cooling_kw = min(effective_cooling_kw, heat_in_kw * 3.0)
         # Envelope loss / gain (positive = heat flowing out when room is warm)
         envelope_kw = ENVELOPE_CONDUCTANCE * (self.temp_c - outside_temp_c)
 
         net_kw = heat_in_kw - effective_cooling_kw - envelope_kw
         net_kj = net_kw * SECONDS_PER_STEP
         delta_temp = net_kj / THERMAL_MASS_KJ_PER_K
-
+        # delta_temp = max(-5.0, min(5.0, delta_temp))
+        delta_temp = max(-2.0, min(2.0, delta_temp))
         self.temp_c = round(self.temp_c + delta_temp, 3)
 
         # Derived temperatures
-        denominator = max(effective_cooling_kw + 0.1, 0.1)
-        self.hot_aisle_temp_c = round(
-            self.temp_c + (heat_in_kw / denominator) * HOT_AISLE_RISE_COEFF, 3
-        )
+        # denominator = max(effective_cooling_kw, 0.1)
+        # self.hot_aisle_temp_c = round(
+        #     self.temp_c + (heat_in_kw / denominator) * HOT_AISLE_RISE_COEFF, 3
+        # )
+        # self.hot_aisle_temp_c = max(self.hot_aisle_temp_c, self.temp_c + 1.0)
+        mass_flow = 50.0 * (self.fan_speed_pct / 100.0)  # kg/s
+        if mass_flow > 0.5:
+            self.hot_aisle_temp_c = round(
+                supply_air_temp_c + heat_in_kw / (mass_flow * 1.006), 3
+            )
+        else:
+            self.hot_aisle_temp_c = round(min(supply_air_temp_c + 50.0, 85.0), 3)
         self.supply_air_temp_c = supply_air_temp_c
 
         # Humidity heuristic
@@ -360,14 +369,14 @@ class FacilityState:
 
         for zone in self.zones:
             if self.chiller_active:
-                # Supply air is roughly the chiller setpoint + a small
-                # distribution loss (0.5 °C rise in duct work).
-                chilled_supply = self.chiller_setpoint_c + 0.5
+                # Chiller can deliver down to chiller_setpoint + duct loss
+                # but zone setpoint is the agent's actual control lever
+                chiller_floor = self.chiller_setpoint_c + 0.5
+                # Agent setpoint is bounded below by what the chiller can deliver
+                chilled_supply = max(zone.supply_air_temp_setpoint_c, chiller_floor)
             else:
-                # Fall back to mixed free-air cooling
                 chilled_supply = self.wet_bulb_temp_c + 2.0
 
-            # Blend with free-cooling when available
             effective_supply = (
                 free_cooling * (self.wet_bulb_temp_c + 2.0)
                 + (1.0 - free_cooling) * chilled_supply
@@ -375,7 +384,6 @@ class FacilityState:
             zone.supply_air_temp_c = round(
                 max(SUPPLY_AIR_TEMP_MIN, min(effective_supply, SUPPLY_AIR_TEMP_MAX)), 2
             )
-
     # ── Action application with rate-limiting ─────────────────────────────────
 
     def apply_action_with_rate_limiting(

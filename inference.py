@@ -229,7 +229,7 @@ def get_llm_action(obs_dict: dict, step: int, history: List[str]) -> dict:
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.2,
-                max_tokens=400,
+                max_tokens=600,
             )
             raw = (response.choices[0].message.content or "").strip()
             if not raw:
