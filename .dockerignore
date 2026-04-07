@@ -1,0 +1,15 @@
+# Exclude Windows virtual environment - Docker builds its own Linux venv via uv sync
+.venv
+
+# Other build/editor artifacts that don't belong in the image
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+*.egg-info
+.git
+.gitignore
+.env
+*.log
+inference_output.txt
