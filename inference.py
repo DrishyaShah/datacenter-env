@@ -490,8 +490,7 @@ def run_task(task_cfg: dict) -> float:
     success = False
 
     try:
-        reset_result = env.reset()
-        obs: DCObservation = reset_result.observation
+        obs: DCObservation = env.reset()
 
         _prev_temps: dict = {}
         _last_llm_result: dict = {}   # last non-empty LLM response — used as fallback intent
@@ -576,10 +575,9 @@ def run_task(task_cfg: dict) -> float:
 
             done = False
             try:
-                step_result = env.step(action)
-                reward = step_result.reward
-                done   = step_result.done
-                obs    = step_result.observation
+                obs    = env.step(action)
+                reward = float(obs.reward) if obs.reward is not None else 0.0
+                done   = obs.done
             except Exception as e:
                 reward    = 0.0
                 done      = True

@@ -23,8 +23,6 @@ from .models import (
     DCAction,
     DCObservation,
     DCReward,
-    ResetResult,
-    StepResult,
     ZoneAdjustment,
     ZoneObservation,
 )
@@ -150,10 +148,10 @@ class DCEnvironment(Environment):
 
     # ── OpenEnv interface ──────────────────────────────────────────────────────
 
-    def reset(self) -> ResetResult:
-        """Reset the environment and return initial observation."""
-        seed = self.seed if self.seed is not None else random.randint(0, 99_999)
-        self._facility = self.config["scenario_builder"](seed=seed)
+    def reset(self, seed: Optional[int] = None, episode_id: Optional[str] = None, **kwargs) -> DCObservation:
+        """Reset the environment and return initial observation (OpenEnv interface: returns Observation directly)."""
+        _seed = seed if seed is not None else (self.seed if self.seed is not None else random.randint(0, 99_999))
+        self._facility = self.config["scenario_builder"](seed=_seed)
         self._grader = self.config["grader_class"]()
         self._step_count = 0
         self._done = False
@@ -185,10 +183,12 @@ class DCEnvironment(Environment):
         self._last_action = self._neutral_sim_action()
 
         obs = self._make_observation()
-        return ResetResult(observation=obs, info={"task": self.task, "seed": seed})
+        obs.done = False
+        obs.reward = None
+        return obs
 
-    def step(self, action: DCAction) -> StepResult:
-        """Apply agent action, advance simulation, compute reward, return StepResult."""
+    def step(self, action: DCAction, timeout_s: Optional[float] = None, **kwargs) -> DCObservation:  # type: ignore[override]
+        """Apply agent action, advance simulation, compute reward, return DCObservation."""
         if self._done:
             raise RuntimeError("Episode is done. Call reset() first.")
         if self._facility is None:
@@ -274,14 +274,12 @@ class DCEnvironment(Environment):
             info["episode_rewards"] = list(self._episode_rewards)
 
         obs = self._make_observation()
-        return StepResult(
-            observation=obs,
-            reward=step_reward,
-            reward_detail=reward_model,
-            done=self._done,
-            info=info,
-        )
+        obs.done = self._done
+        obs.reward = float(step_reward)
+        obs.metadata = info
+        return obs
 
+    @property
     def state(self) -> dict:
         """Return full internal state for debugging/inspection."""
         if self._facility is None:
