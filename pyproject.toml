@@ -18,6 +18,7 @@ dependencies = [
     # install from github
     # "openenv-core[core] @ git+https://github.com/meta-pytorch/OpenEnv.git",
     "openenv-core[core]>=0.2.2",
+    "openai>=1.0.0",
     # Environment-specific dependencies
     # Add all dependencies needed for your environment here
     # Examples:

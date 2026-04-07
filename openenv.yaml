@@ -1,78 +1,77 @@
-# openenv.yaml — single YAML combining metadata + runtime
-spec_version: 1
+# OpenEnv manifest — DC cooling environment (V2)
 name: dc-openenv
-version: "1.0.0"
+version: "2.0.0"
 description: >
-  Data Centre Operations Environment. An LLM agent acts as a junior data centre
-  engineer making cooling decisions. Simulates thermal physics with structured
-  JSON state including sensor readings, maintenance logs, and business context.
-author: dc-openenv-team
-license: MIT
+  Data Centre Cooling Control — a physics-based sequential decision environment
+  for evaluating AI agents on real-world industrial control tasks.
+  Three tasks from thermal recovery (easy) to carbon-aware cascading failure triage (hard).
+author: "Team DC-OpenEnv"
+license: Apache-2.0
+tags:
+  - openenv
+  - data-center
+  - cooling
+  - energy-efficiency
+  - carbon-aware
+  - safety-constrained
 
-# ── Runtime / server spec ───────────────────────────────
-type: space
 runtime: fastapi
-app: server.app:app   # points to your FastAPI instance
+app: server.app:app
 port: 8000
-server:
-  base_url: "http://localhost:8000"
-  health_endpoint: "/health"
-  reset_endpoint: "/reset"
-  step_endpoint: "/step"
-  state_endpoint: "/state"
 
-# ── Observation / Action / Reward ───────────────────────
-observation_space:
-  type: object
-  fields:
-    - name: step
-      type: integer
-    - name: timestamp_hour
-      type: float
-    - name: outside_temp_c
-      type: float
-    - name: chiller_active
-      type: boolean
-    - name: chiller_cop
-      type: float
-    - name: grid_carbon_intensity
-      type: string
-      enum: [low, medium, high, critical_high]
-    - name: current_pue
-      type: float
-    - name: zones
-      type: array
-    - name: maintenance_notes
-      type: array
-    - name: upcoming_events
-      type: array
-
-action_space:
-  type: object
-  fields:
-    - name: zone_adjustments
-      type: array
-    - name: reasoning
-      type: string
-
-reward:
-  range: [-1.0, 1.0]
-  per_step: true
-
-# ── Tasks ──────────────────────────────────────────────
 tasks:
   - id: easy-single-zone
-    name: Single-Zone Temperature Control
     difficulty: easy
+    max_steps: 20
     description: >
-      Keep one server room zone in safe temperature range (18-27C)
-      while minimizing PUE. Zone starts overheated at 28.5C with fan at 60%.
-    max_steps: 12
-    success_threshold: 0.6
-# spec_version: 1
-# name: datacenter_env
-# type: space
-# runtime: fastapi
-# app: server.app:app
-# port: 8000
+      Single zone starts at 28.5 °C (overheating). Agent must recover to [18-27 °C]
+      and maintain efficient cooling across 4 simulated hours (14:00-18:00).
+      20 steps × 12 min/step = 4 hr; step_scale=2.4 condenses the original 48-step arc.
+  - id: medium-multi-zone
+    difficulty: medium
+    max_steps: 30
+    description: >
+      Three zones with diurnal load surge (steps 6-17 in condensed timeline). One zone
+      has a faulty sensor reporting up to +12 °C above true temperature; sensor_confidence
+      degrades to ~0.1 by step ~10. Agent must infer true state, avoid over-cooling, and
+      handle the morning peak load safely across 12 simulated hours (06:00-18:00).
+      30 steps × 24 min/step = 12 hr; step_scale=4.8 condenses the original 144-step arc.
+  - id: hard-cascading-failure
+    difficulty: hard
+    max_steps: 40
+    description: >
+      Four zones: chiller COP degrades at step 3 (sim-time ~02:24), chiller goes fully
+      offline at step 8 (sim-time ~06:24). Agent must triage — protect CRITICAL priority
+      zones (zone_ai_1, zone_ai_2) even at the expense of LOW priority zones, while
+      minimising carbon cost during the high-carbon window (steps ~11-22).
+      40 steps × 36 min/step = 24 hr; step_scale=7.2 condenses the original 288-step arc.
 
+action_space:
+  type: structured
+  description: >
+    Per-step DCAction: zone_adjustments (list) plus facility chiller controls.
+  fields:
+    - name: zone_adjustments
+      type: list
+      description: >
+        One entry per zone; each item has zone_id (str), fan_speed_pct [0,100],
+        supply_air_temp_setpoint_c [16,26].
+    - name: chiller_setpoint_c
+      type: float
+      range: [6, 15]
+      description: "Facility chilled-water setpoint (°C)"
+    - name: chiller_active
+      type: bool
+      description: "Chiller on/off"
+    - name: reasoning
+      type: string
+      optional: true
+      description: "Optional explanation (graded on hard task)"
+
+observation_space:
+  type: structured
+  description: >
+    DCObservation: time, weather, chiller state, PUE, carbon labels, per-zone
+    ZoneObservation fields, 3-step history buffer, SLA streak, maintenance hints.
+
+reward_range: [-1.0, 1.0]

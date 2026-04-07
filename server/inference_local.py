@@ -16,8 +16,8 @@ import time
 from typing import List, Optional
 import requests
 
-from datacenter_env_environment import DCEnvironment
-from models import DCAction, DCObservation
+from datacenter_env.server.environment import DCEnvironment
+from datacenter_env.server.models import DCAction, DCObservation
 
 # ── Config ────────────────────────────────────────────────────────────────
 

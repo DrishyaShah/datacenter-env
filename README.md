@@ -1,255 +1,594 @@
----
-title: Datacenter Env Environment Server
-emoji: 🥋
-colorFrom: yellow
-colorTo: purple
-sdk: docker
-pinned: false
-app_port: 8000
-base_path: /web
-tags:
-  - openenv
+# DC-OpenEnv: Data Centre Cooling Environment
+
+An **OpenEnv-compliant reinforcement learning environment** for evaluating LLM agents on data centre cooling control. Built for the OpenEnv Hackathon — three progressively harder tasks challenge an agent to maintain thermal safety, minimise energy waste, and respond to realistic failures across a condensed 24-hour simulation.
+
 ---
 
-# Datacenter Env Environment
+## Table of Contents
 
-A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.
+1. [Problem Overview](#problem-overview)
+2. [Architecture](#architecture)
+3. [Tasks](#tasks)
+   - [Easy: Single-Zone Thermal Runaway Recovery](#easy-single-zone-thermal-runaway-recovery)
+   - [Medium: Multi-Zone Load Surge with Sensor Fault](#medium-multi-zone-load-surge-with-sensor-fault)
+   - [Hard: Cascading Chiller Failure with Carbon-Aware Triage](#hard-cascading-chiller-failure-with-carbon-aware-triage)
+4. [Physics Simulation](#physics-simulation)
+5. [Timeline Condensation](#timeline-condensation)
+6. [Observation Space](#observation-space)
+7. [Action Space](#action-space)
+8. [Reward Functions](#reward-functions)
+9. [LLM Agent](#llm-agent)
+10. [How to Run](#how-to-run)
+11. [Known Caveats](#known-caveats)
 
-## Quick Start
+---
 
-The simplest way to use the Datacenter Env environment is through the `DatacenterEnv` class:
+## Problem Overview
 
-```python
-from datacenter_env import DatacenterAction, DatacenterEnv
+A data centre generates continuous heat from IT equipment. Cooling systems (chillers, fans, supply air) must remove that heat while minimising power consumption (PUE) and carbon emissions. The challenge: cooling decisions have delayed thermal effects, equipment fails unexpectedly, and sensors can lie.
 
-try:
-    # Create environment from Docker image
-    datacenter_envenv = DatacenterEnv.from_docker_image("datacenter_env-env:latest")
+This environment does **not** train an RL agent. Instead, it provides a well-specified OpenEnv environment against which a frontier LLM can be evaluated zero-shot. Evaluators run `inference.py` against their model and score the episode outcomes.
 
-    # Reset
-    result = datacenter_envenv.reset()
-    print(f"Reset: {result.observation.echoed_message}")
+**Scoring**: each task produces a final score in `[0.0, 1.0]`. The hackathon hard cap is **20 minutes total** inference time across all three tasks.
 
-    # Send multiple messages
-    messages = ["Hello, World!", "Testing echo", "Final message"]
+---
 
-    for msg in messages:
-        result = datacenter_envenv.step(DatacenterAction(message=msg))
-        print(f"Sent: '{msg}'")
-        print(f"  → Echoed: '{result.observation.echoed_message}'")
-        print(f"  → Length: {result.observation.message_length}")
-        print(f"  → Reward: {result.reward}")
+## Architecture
 
-finally:
-    # Always clean up
-    datacenter_envenv.close()
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         inference.py                                │
+│  ┌────────────────┐   JSON prompt    ┌────────────────────────────┐ │
+│  │  LLM Agent     │ ←──────────────→ │  OpenAI-compatible API     │ │
+│  │  (Groq/Llama)  │                  │  (Groq llama-3.3-70b etc.) │ │
+│  └───────┬────────┘                  └────────────────────────────┘ │
+│          │ DCAction (JSON)                                           │
+│          ▼                                                           │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                     DCEnvironment                             │  │
+│  │  ┌───────────────┐  ┌───────────────┐  ┌──────────────────┐  │  │
+│  │  │  environment  │  │  simulation   │  │    graders/      │  │  │
+│  │  │  .py          │→ │  .py          │  │  grader_easy.py  │  │  │
+│  │  │               │  │               │  │  grader_medium.py│  │  │
+│  │  │  TASK_CONFIGS │  │  FacilityState│  │  grader_hard.py  │  │  │
+│  │  │  step()       │  │  ZoneState    │  │                  │  │  │
+│  │  │  reset()      │  │  step_thermal │  │  step() reward   │  │  │
+│  │  │  state()      │  │  advance_time │  │  final_score()   │  │  │
+│  │  └───────────────┘  └───────────────┘  └──────────────────┘  │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│          │ DCObservation + reward                                    │
+│          ▼                                                           │
+│  ┌───────────────────┐                                              │
+│  │  inference_output │  [START] / [STEP] / [END] protocol lines    │
+│  │  .txt             │                                              │
+│  └───────────────────┘                                              │
+└─────────────────────────────────────────────────────────────────────┘
+
+Data flow per step:
+  LLM JSON action → DCAction (Pydantic) → SimDCAction
+  → FacilityState.step() [thermal physics]
+  → DCObservation built from FacilityState
+  → Grader.step() [reward calculation]
+  → StepResult returned to inference.py
+  → formatted [STEP] line to stdout + log file
 ```
 
-That's it! The `DatacenterEnv.from_docker_image()` method handles:
-- Starting the Docker container
-- Waiting for the server to be ready
-- Connecting to the environment
-- Container cleanup when you call `close()`
+### Key files
 
-## Building the Docker Image
+| File | Role |
+|------|------|
+| `server/environment.py` | OpenEnv `Environment` subclass; orchestrates episodes, streaks, hard termination, observation building |
+| `server/simulation.py` | Physics model: thermal mass, mass flow, chiller COP, free cooling, diurnal curves, sensor drift |
+| `server/models.py` | Pydantic models: `DCObservation`, `ZoneObservation`, `DCAction`, `ZoneAdjustment`, `DCReward` |
+| `server/scenarios/easy.py` | Easy scenario initial state builder |
+| `server/scenarios/medium.py` | Medium scenario initial state builder with faulty sensor and diurnal outside temp curve |
+| `server/scenarios/hard.py` | Hard scenario initial state builder with chiller fault injection and 24-hr weather/carbon curves |
+| `server/graders/grader_easy.py` | Easy task reward logic |
+| `server/graders/grader_medium.py` | Medium task reward logic |
+| `server/graders/grader_hard.py` | Hard task reward logic |
+| `inference.py` | Main runner: LLM API calls, alert injection, history enrichment, protocol output |
+| `openenv.yaml` | OpenEnv manifest: task IDs, max_steps, descriptions |
 
-Before using the environment, you need to build the Docker image:
+---
+
+## Tasks
+
+### Easy: Single-Zone Thermal Runaway Recovery
+
+```
+┌─────────────────────────────────────────┐
+│           Data Centre (Easy)            │
+│                                         │
+│  ┌───────────────────────────────────┐  │
+│  │         zone_main                 │  │
+│  │  Priority: MEDIUM                 │  │
+│  │  IT load:  450 kW (steady)        │  │
+│  │  Start T:  28.5 °C  ← OVERHEAT   │  │
+│  │  Target:   [18 – 27 °C]           │  │
+│  └───────────────────────────────────┘  │
+│                                         │
+│  Outside: 32 °C (hot summer afternoon)  │
+│  Chiller: available, no faults          │
+│  Grid:    medium carbon                 │
+│  Time:    14:00 → 18:00 (4 hours)       │
+└─────────────────────────────────────────┘
+
+Episode: 20 steps × 12 min/step (step_scale=2.4)
+```
+
+**Goal**: Cool the overheating zone into `[18, 27]°C`, then maintain it efficiently — not just pin fans at 100% forever.
+
+**Hard termination**: none.
+
+**Final score**:
+- 60% — fraction of steps where `cold_aisle_temp_c ∈ [18, 27]°C`
+- 40% — average PUE improvement vs PID baseline
+
+---
+
+### Medium: Multi-Zone Load Surge with Sensor Fault
+
+```
+┌──────────────────────────────────────────────────────┐
+│               Data Centre (Medium)                    │
+│                                                       │
+│  ┌────────────────────┐  ┌──────────────────────┐    │
+│  │  zone_ai           │  │  zone_storage         │    │
+│  │  Priority: CRITICAL│  │  Priority: MEDIUM     │    │
+│  │  IT load: 600 kW   │  │  IT load: 200 kW      │    │
+│  │  FAULTY SENSOR ⚠   │  │  (no fault)           │    │
+│  │  sensor_confidence │  └──────────────────────┘    │
+│  │  degrades 1.0→0.1  │                              │
+│  │  by step ~10       │  ┌──────────────────────┐    │
+│  └────────────────────┘  │  zone_infra           │    │
+│                           │  Priority: LOW        │    │
+│                           │  IT load: 150 kW      │    │
+│                           └──────────────────────┘    │
+│                                                       │
+│  Outside: 18°C (night) → 34°C peak (noon)            │
+│  Load surge: steps 6–17 (~60%→~95% of baseline)      │
+│  Time: 06:00 → 18:00 (12 hours)                      │
+└──────────────────────────────────────────────────────┘
+
+Episode: 30 steps × 24 min/step (step_scale=4.8)
+```
+
+**Goal**: Keep all three zones in `[18, 27]°C` through a load surge while a faulty sensor on `zone_ai` reports up to 12°C above the true temperature. Agent must use `cold_aisle_temp_c` and `sensor_confidence` to infer true state.
+
+**Hard termination**: any zone unsafe for 10+ consecutive steps → episode ends with score 0.
+
+**Final score**:
+- 35% — all-zone temperature compliance fraction
+- 25% — average PUE improvement vs PID baseline
+- 20% — sensor inference quality for `zone_ai` (did agent act on true state, not the faulty reading?)
+- 20% — compliance fraction during peak load window (steps 6–17)
+
+---
+
+### Hard: Cascading Chiller Failure with Carbon-Aware Triage
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                  Data Centre (Hard)                           │
+│                                                               │
+│  ┌─────────────────┐  ┌─────────────────┐                   │
+│  │  zone_ai_1      │  │  zone_ai_2      │  ← CRITICAL        │
+│  │  Priority: 2    │  │  Priority: 2    │    must stay        │
+│  │  500 kW         │  │  480 kW         │    ≤ 30°C           │
+│  └─────────────────┘  └─────────────────┘                   │
+│                                                               │
+│  ┌─────────────────┐  ┌─────────────────┐                   │
+│  │  zone_storage   │  │  zone_infra     │  ← Sacrificeable   │
+│  │  Priority: 1    │  │  Priority: 0    │    (LOW)            │
+│  │  200 kW         │  │  120 kW         │                    │
+│  └─────────────────┘  └─────────────────┘                   │
+│                                                               │
+│  Chiller fault timeline:                                      │
+│    Step 0–2  : Normal operation (COP ≈ 3.5)                  │
+│    Step 3    : COP begins degrading → 0.8 over 5 steps       │
+│    Step 8    : Chiller OFFLINE — fans only from here         │
+│    Steps 8–16: Recovery window (free-cooling + fans only)    │
+│                                                               │
+│  Carbon: low nights → HIGH midday (steps 11-22) → low eve   │
+│  Free cooling: steps 0–4 and ~33–40 (cool night air)        │
+│  Time: 00:00 → 24:00 (24 hours)                              │
+└──────────────────────────────────────────────────────────────┘
+
+Episode: 40 steps × 36 min/step (step_scale=7.2)
+```
+
+**Goal**: Protect critical AI zones through a chiller failure. Pre-cool before the fault, triage resources post-fault, exploit free cooling windows, and avoid running full fans during high-carbon midday.
+
+**Hard termination**: any critical zone (`zone_ai_1` or `zone_ai_2`) above 32°C for 5+ consecutive steps → episode ends with score 0.
+
+**Final score**:
+- 30% — SLA compliance (critical zone safety throughout)
+- 25% — carbon efficiency during high-carbon windows (steps ~11–22)
+- 20% — recovery speed after chiller goes offline (steps 8–16)
+- 15% — triage quality (protecting critical zones at expense of low-priority)
+- 10% — reasoning coherence (stated reasoning matches actual action)
+
+---
+
+## Physics Simulation
+
+All thermal physics live in `server/simulation.py`.
+
+### Zone thermal model
+
+Each `ZoneState` has a configurable thermal mass (`thermal_mass_kj_per_k`, default 850 kJ/K, scaled proportionally to zone IT load). The temperature update at each step is:
+
+```
+heat_in   = it_load_kw × SECONDS_PER_STEP (300 s)
+heat_out  = mass_flow × Cp_air × (zone_temp - supply_air_temp)
+ΔT        = (heat_in - heat_out) × SECONDS_PER_STEP / (thermal_mass_kj_per_k × 1000)
+zone.temp += ΔT
+```
+
+Where `mass_flow` scales with `fan_speed_pct` and zone capacity:
+
+```
+mass_flow = (fan_speed_pct / 100) × MASS_FLOW_REF_KGS × (capacity_ratio)
+capacity_ratio = zone.cooling_capacity_kw / MASS_FLOW_REF_CAPACITY_KW
+```
+
+The cold-aisle temperature floor is clamped to prevent physically impossible sub-ambient values.
+
+### Chiller and free cooling
+
+- **Chiller COP** is temperature-dependent: warmer outside air reduces efficiency. COP degrades as `outside_temp_c` rises (approx. linear from 3.5 at 20°C to lower values at 35°C).
+- **Free cooling** (`free_cooling_potential`) measures how much cooling could be supplied by outside air economiser. Active only when `wet_bulb_temp_c` is meaningfully below target supply temperature. The chiller propagation logic blends free-cooling air only when it is genuinely cooler than the chilled-water target.
+- **Chiller fault** (hard scenario): `chiller_fault_step` triggers COP degradation over 5 steps, followed by full offline state. Detectable via `chiller_fault_detected` flag in observation (set when COP < 60% of baseline).
+
+### Diurnal curves
+
+Medium and hard scenarios provide per-step outside temperature and wet-bulb curves (144 and 288 raw data points respectively). The environment uses `step_scale` to index into these curves at the correct condensed rate (see [Timeline Condensation](#timeline-condensation)).
+
+IT load follows a 24-hour sinusoidal/trapezoidal profile. Carbon intensity follows a separate 24-hour curve with peak midday values.
+
+### Sensor drift (medium scenario)
+
+`zone_ai` has a sensor fault. The `apply_sensor_drift()` method in `FacilityState` accumulates drift using an effective step count scaled by `minutes_per_step / 5.0`:
+
+```
+effective_step = raw_step × (minutes_per_step / 5.0)
+target_drift   = min(3.0 + effective_step × 0.18, 12.0)  # caps at +12°C
+```
+
+`reported_temp_c` includes this drift. `sensor_confidence` degrades from 1.0 → ~0.1 as drift accumulates. `cold_aisle_temp_c` always shows the true physical temperature.
+
+### Rate limiting on actions
+
+`simulation.step()` applies soft rate limiting: consecutive large fan speed or setpoint changes are partially smoothed to prevent instantaneous step changes that would be physically unrealistic.
+
+---
+
+## Timeline Condensation
+
+The original scenario plans span 48 / 144 / 288 steps at 5 min/step (4 / 12 / 24 hours). To fit within the ~20-minute inference budget, episodes are condensed:
+
+| Task | Original steps | Condensed steps | `step_scale` | Sim time per step | Total simulated time |
+|------|---------------|-----------------|--------------|-------------------|----------------------|
+| Easy | 48 | 20 | 2.4 | 12 min | 4 hr |
+| Medium | 144 | 30 | 4.8 | 24 min | 12 hr |
+| Hard | 288 | 40 | 7.2 | 36 min | 24 hr |
+
+**How it works**: `minutes_per_step = 5.0 × step_scale` is stored in `FacilityState`. Each environment step:
+
+1. **Clock** advances by `minutes_per_step` (e.g. 36 min for hard task).
+2. **Weather curves** are indexed at `step_count × step_scale` to traverse the full arc.
+3. **Load and carbon curves** follow the clock (hour-indexed), so they also advance at the right rate.
+4. **Sensor drift** uses `effective_step = raw_step × step_scale` so drift speed is proportionally correct.
+5. **Chiller fault step** is rescaled on `reset()`: `scaled_fault = round(raw_fault_step / step_scale)`.
+6. **Thermal physics** (`step_thermal()`) still use `SECONDS_PER_STEP = 300` (5 real minutes) to maintain physically accurate heat transfer calculations.
+
+The result: the agent experiences the full scenario arc (night → morning surge → peak → recovery) within a tractable step count, while individual cooling physics remain realistic.
+
+---
+
+## Observation Space
+
+Returned as a `DCObservation` Pydantic model each step. All fields are present for all tasks.
+
+### Facility-level fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `step` | `int` | Current step number (0-indexed after first step) |
+| `timestamp_hour` | `float` | Hour of day [0–24] (advances by `minutes_per_step / 60` per step) |
+| `timestamp_day_sin` | `float` | sin(2π × hour/24) — cyclical time encoding |
+| `timestamp_day_cos` | `float` | cos(2π × hour/24) — cyclical time encoding |
+| `outside_temp_c` | `float` | Outdoor dry-bulb temperature (°C) |
+| `wet_bulb_temp_c` | `float` | Outdoor wet-bulb temperature (°C) — determines free-cooling potential |
+| `chiller_active` | `bool` | Whether the chiller is currently running |
+| `chiller_setpoint_c` | `float` | Current chilled-water setpoint [6–15] (°C) |
+| `chiller_cop` | `float` | Current chiller coefficient of performance |
+| `chiller_fault_detected` | `bool` | Observable anomaly: True when COP < 60% of baseline or chiller is offline |
+| `ups_efficiency` | `float` | UPS efficiency [0–1] |
+| `current_pue` | `float` | Real-time Power Usage Effectiveness (1.0 = perfect) |
+| `free_cooling_potential` | `float` | Fraction of cooling that could be met by free-air economiser [0–1] |
+| `grid_carbon_intensity` | `str` | Human-readable label: `low`, `medium`, `high`, `critical_high` |
+| `carbon_intensity_normalized` | `float` | Numeric carbon intensity [0.0–1.0] |
+| `load_curve_phase` | `str` | Diurnal phase: `ramp_up`, `peak`, `ramp_down`, or `idle` |
+| `sla_violation_streak` | `int` | Consecutive steps where any zone was outside [18, 27]°C |
+| `maintenance_active` | `bool` | True if any zone is in a maintenance window |
+| `maintenance_notes` | `list[str]` | Free-text maintenance notes |
+| `upcoming_events` | `list[str]` | Scenario-injected event forecasts |
+| `history` | `list[dict]` | Last 3 step snapshots (per-zone temps, fan speed, PUE) — oldest first |
+
+### Per-zone fields (`zones` array)
+
+Each entry in `zones` is a `ZoneObservation`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `zone_id` | `str` | Zone identifier (e.g. `zone_main`, `zone_ai_1`) |
+| `cold_aisle_temp_c` | `float` | **True** cold-aisle supply temperature (°C) — always accurate |
+| `hot_aisle_temp_c` | `float` | Return-air temperature from server exhausts (°C) |
+| `reported_temp_c` | `float` | Sensor-reported temperature — **may include drift/fault offset** (°C) |
+| `supply_air_temp_c` | `float` | Actual delivered supply air temperature after chiller blending (°C) |
+| `supply_air_temp_setpoint_c` | `float` | Agent-controlled supply air temperature setpoint [16–26] (°C) |
+| `it_load_kw` | `float` | Current IT equipment power draw (kW) |
+| `it_load_pct` | `float` | Normalised IT load relative to zone baseline [0–1] |
+| `fan_speed_pct` | `float` | Current fan speed [0–100%] |
+| `cooling_capacity_kw` | `float` | Maximum cooling capacity at full fan speed (kW) |
+| `humidity_pct` | `float` | Relative humidity (%) |
+| `sensor_confidence` | `float` | Reliability weight [0.0–1.0]; below 0.5 means `reported_temp_c` is unreliable |
+| `zone_priority` | `int` | Static criticality: 0=LOW, 1=MEDIUM, 2=CRITICAL |
+| `load_forecast_next_hour` | `float` | Predicted IT load 60 min ahead (kW), computed from load curve |
+
+### Dynamic alerts (inference.py injection)
+
+`inference.py` computes additional real-time warnings via `_compute_alerts()` and injects them as an `alerts` list into the JSON prompt. These are **not** part of the `DCObservation` model — they are added only to the LLM's prompt context:
+
+- Chiller fault / offline warnings
+- Zone over-temperature warnings with delta trend
+- Sensor fault warnings when `sensor_confidence < 0.4`
+- Carbon intensity warnings during high-carbon windows
+- SLA violation streak warnings
+- Efficiency nudge when a zone is stable but fans are unnecessarily high (≥70% when zone is safe and stable)
+
+---
+
+## Action Space
+
+Submitted as a `DCAction` JSON object each step.
+
+### Per-zone adjustments (`zone_adjustments` array)
+
+| Field | Type | Bounds | Description |
+|-------|------|--------|-------------|
+| `zone_id` | `str` | — | Must exactly match a `zone_id` from the current observation |
+| `fan_speed_pct` | `float` | [0.0, 100.0] | Target fan speed for this zone |
+| `supply_air_temp_setpoint_c` | `float` | [16.0, 26.0] | Target supply air temperature setpoint |
+
+### Facility-level controls
+
+| Field | Type | Bounds | Default | Description |
+|-------|------|--------|---------|-------------|
+| `chiller_setpoint_c` | `float` | [6.0, 15.0] | 10.0 | Facility-wide chilled-water supply temperature setpoint |
+| `chiller_active` | `bool` | — | true | Toggle chiller on/off |
+| `reasoning` | `str` | — | null | Agent's explanation; graded in hard task for coherence |
+
+**Rate limiting**: the simulation smooths abrupt consecutive changes to fan speed and setpoint. Very large single-step jumps are partially applied rather than fully accepted, reflecting real actuator dynamics.
+
+**Omitting a zone** from `zone_adjustments` leaves its settings unchanged for that step.
+
+---
+
+## Reward Functions
+
+All rewards are per-step values clipped to `[-1.0, 1.0]`. The grader also produces a `final_score` in `[0.0, 1.0]` at episode end.
+
+### Easy task (`grader_easy.py`)
+
+**Per-step reward** (`R_step`):
+
+```
+If zone in [18, 27]°C:
+  closeness       = 1.0 - |temp - 22| / 5.0                   (0→1)
+  dist_boundary   = min(temp - 18, 27 - temp)
+  boundary_margin = min(dist_boundary / 3.0, 1.0)             (0→1)
+  temp_reward     = 0.30 + 0.10×closeness + 0.15×boundary_margin
+  streak_bonus    = 0.05 × min(consecutive_safe / 10, 1.0)
+  temp_reward     = min(0.60, temp_reward + streak_bonus)
+
+  pue_vs_pid  = (pid_baseline_pue - current_pue) / (pid_baseline_pue - 1.18)
+  pue_reward  = 0.35 × pue_vs_pid  (clamped to [-1, 1])
+
+Else (violation):
+  overshoot   = max(0, temp - 27)
+  undershoot  = max(0, 18 - temp)
+  temp_reward = -0.30 × min((overshoot + undershoot) / 3.0, 1.0)
+  pue_reward  = 0.0   (suppressed during violation)
+
+carbon_reward = -0.05 × (cooling_overhead_fraction) × carbon_normalized
+
+R_step = clip(temp_reward + pue_reward + carbon_reward, -1, 1)
+```
+
+**Final score**: `0.60 × compliance_fraction + 0.40 × avg_pue_score`
+
+---
+
+### Medium task (`grader_medium.py`)
+
+**Per-step reward weights**: temp=0.50, PUE=0.25, carbon=0.15, roughness=0.10
+
+Priority multipliers on temperature reward: LOW=0.7×, MEDIUM=1.0×, CRITICAL=1.4×
+
+**Sensor inference quality**: scored at episode end by comparing agent's `supply_air_temp_setpoint_c` for `zone_ai` against an oracle setpoint (20°C during high load, 22°C normal). Averaged over steps when `sensor_confidence < 0.5`. Rewards agents that use the true physical temperature rather than the drifted sensor reading.
+
+**Final score**:
+```
+0.35 × all_zone_compliance
++ 0.25 × avg_pue_score
++ 0.20 × sensor_inference_quality
++ 0.20 × peak_window_compliance  (steps 6–17)
+```
+
+---
+
+### Hard task (`grader_hard.py`)
+
+**Per-step reward weights**: temp=0.45, PUE=0.20, carbon=0.05, safety=0.20, roughness=0.05, stability=0.05
+
+**SLA compliance**: critical zones (`zone_ai_1`, `zone_ai_2`) above `CRITICAL_THRESHOLD=30°C` incur hard safety penalties. Above `EMERGENCY_THRESHOLD=35°C` = maximum penalty.
+
+**Triage quality**: measured post-fault. At each step after `CHILLER_OFFLINE_STEP=8`, checks whether critical zones are being prioritised (higher fan, lower setpoint) relative to low-priority `zone_infra`.
+
+**Recovery speed**: fraction of steps in the recovery window `[8, 16]` where all critical zones are in safe band `[18, 27]°C`.
+
+**Carbon efficiency**: fraction of high-carbon steps (steps where `carbon_intensity_normalized > 0.55`) where cooling power is below median. Only scored if the episode reaches high-carbon territory; defaults to 0.5 if the agent never encounters a high-carbon window.
+
+**Reasoning coherence**: regex-scored against declared crisis actions. An agent saying "raising fans to protect critical zones" that actually lowers fans loses coherence points.
+
+**Final score**:
+```
+0.30 × sla_score
++ 0.25 × carbon_score
++ 0.20 × recovery_score
++ 0.15 × triage_score
++ 0.10 × reasoning_score
+```
+
+**Hard termination**: if `chiller_active=False` is observed while episode is not done, and any critical zone exceeds 32°C for 5+ consecutive steps, the episode terminates immediately with `score=0`.
+
+---
+
+## LLM Agent
+
+The agent in `inference.py` makes one API call per step and formats its response as JSON.
+
+### System prompt structure
+
+The system prompt (constant across all steps and tasks) teaches the agent:
+
+1. **MDP structure**: state fields, action fields, reward shaping goals.
+2. **Decision rules** (priority order): safety → efficiency → carbon.
+3. **Zone control rules**: when to go aggressive (temp > 27°C), when to back off (temp falling toward 18°C), thermal inertia awareness.
+4. **Sensor confidence rule**: `sensor_confidence < 0.5` means `reported_temp_c` is unreliable — use `cold_aisle_temp_c` instead.
+5. **Chiller failure protocol**: pre-cool on fault detection, triage after offline, do not attempt to re-enable during fault.
+6. **Triage rule**: zone priorities (2=CRITICAL, 1=MEDIUM, 0=LOW) and when to sacrifice low-priority zones.
+
+### Per-step user message
+
+Each step, the agent receives:
+
+- Full current `DCObservation` as JSON
+- A dynamic `alerts` list (injected by `_compute_alerts()`) with real-time warnings
+- Enriched history entries tagged with events (e.g. `[CHILLER_FAULT]`, `[CHILLER_OFFLINE]`, `[VIOLATION:zone_id]`) for temporal context
+
+### Fallback mechanism (`_last_llm_result`)
+
+If the LLM API call fails (network error, rate limit), the agent falls back to the last successful JSON action. This prevents the episode from stalling and ensures the environment always receives a valid action.
+
+### Daily token quota (TPD) handling
+
+When Groq returns a `RateLimitError` containing "per day" or "TPD", the retry logic immediately returns `{}` (empty action → fallback) rather than sleeping for minutes. This avoids wasting wall-clock budget on a quota that cannot recover mid-run.
+
+### Rate limit retry
+
+On transient per-minute 429 errors: exponential backoff with `base=2.0s`, doubling per attempt, max 3 attempts (2s → 4s → 8s = 14s max).
+
+### Model and API configuration
 
 ```bash
-# From project root
-docker build -t datacenter_env-env:latest -f server/Dockerfile .
+export OPENAI_API_KEY="your-groq-key"
+export API_BASE_URL="https://api.groq.com/openai/v1"   # default
+export MODEL_NAME="llama-3.3-70b-versatile"            # default
+export VERBOSE=1                                        # show INFO lines
 ```
 
-## Deploying to Hugging Face Spaces
+---
 
-You can easily deploy your OpenEnv environment to Hugging Face Spaces using the `openenv push` command:
-
-```bash
-# From the environment directory (where openenv.yaml is located)
-openenv push
-
-# Or specify options
-openenv push --namespace my-org --private
-```
-
-The `openenv push` command will:
-1. Validate that the directory is an OpenEnv environment (checks for `openenv.yaml`)
-2. Prepare a custom build for Hugging Face Docker space (enables web interface)
-3. Upload to Hugging Face (ensuring you're logged in)
+## How to Run
 
 ### Prerequisites
 
-- Authenticate with Hugging Face: The command will prompt for login if not already authenticated
+```bash
+pip install openenv openai pydantic
+```
 
-### Options
-
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
-- `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
-- `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
-- `--private`: Deploy the space as private (default: public)
-
-### Examples
+### Start the environment server (if using OpenEnv server mode)
 
 ```bash
-# Push to your personal namespace (defaults to username/env-name from openenv.yaml)
-openenv push
-
-# Push to a specific repository
-openenv push --repo-id my-org/my-env
-
-# Push with a custom base image
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
-
-# Push as a private space
-openenv push --private
-
-# Combine options
-openenv push --repo-id my-org/my-env --base-image custom-base:latest --private
+cd datacenter-env
+python -m openenv.server --env server.environment:DCEnvironment
 ```
 
-After deployment, your space will be available at:
-`https://huggingface.co/spaces/<repo-id>`
+### Run inference directly (recommended for hackathon evaluation)
 
-The deployed space includes:
-- **Web Interface** at `/web` - Interactive UI for exploring the environment
-- **API Documentation** at `/docs` - Full OpenAPI/Swagger interface
-- **Health Check** at `/health` - Container health monitoring
-- **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
+```bash
+export OPENAI_API_KEY="your-api-key"
+export API_BASE_URL="https://api.groq.com/openai/v1"
+export MODEL_NAME="llama-3.3-70b-versatile"
 
-## Environment Details
-
-### Action
-**DatacenterAction**: Contains a single field
-- `message` (str) - The message to echo back
-
-### Observation
-**DatacenterObservation**: Contains the echo response and metadata
-- `echoed_message` (str) - The message echoed back
-- `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
-
-### Reward
-The reward is calculated as: `message_length × 0.1`
-- "Hi" → reward: 0.2
-- "Hello, World!" → reward: 1.3
-- Empty message → reward: 0.0
-
-## Advanced Usage
-
-### Connecting to an Existing Server
-
-If you already have a Datacenter Env environment server running, you can connect directly:
-
-```python
-from datacenter_env import DatacenterEnv
-
-# Connect to existing server
-datacenter_envenv = DatacenterEnv(base_url="<ENV_HTTP_URL_HERE>")
-
-# Use as normal
-result = datacenter_envenv.reset()
-result = datacenter_envenv.step(DatacenterAction(message="Hello!"))
+cd datacenter-env
+python inference.py
 ```
 
-Note: When connecting to an existing server, `datacenter_envenv.close()` will NOT stop the server.
+Output is written to both **stdout** and **`inference_output.txt`**.
 
-### Using the Context Manager
-
-The client supports context manager usage for automatic connection management:
-
-```python
-from datacenter_env import DatacenterAction, DatacenterEnv
-
-# Connect with context manager (auto-connects and closes)
-with DatacenterEnv(base_url="http://localhost:8000") as env:
-    result = env.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-    # Multiple steps with low latency
-    for msg in ["Hello", "World", "!"]:
-        result = env.step(DatacenterAction(message=msg))
-        print(f"Echoed: {result.observation.echoed_message}")
+Protocol lines printed:
+```
+[START] task=easy-single-zone env=dc-openenv model=llama-3.3-70b-versatile
+[STEP]  step=1 action={...} reward=0.42 done=false error=null
+...
+[END]   success=true steps=20 score=0.71 rewards=0.42,0.55,...
 ```
 
-The client uses WebSocket connections for:
-- **Lower latency**: No HTTP connection overhead per request
-- **Persistent session**: Server maintains your environment state
-- **Efficient for episodes**: Better for many sequential steps
+### Per-task step cap (optional override)
 
-### Concurrent WebSocket Sessions
+```bash
+export INFERENCE_MAX_STEPS_PER_TASK=10
+python inference.py
+```
 
-The server supports multiple concurrent WebSocket connections. To enable this,
-modify `server/app.py` to use factory mode:
+### Run a single task programmatically
 
 ```python
-# In server/app.py - use factory mode for concurrent sessions
-app = create_app(
-    DatacenterEnvironment,  # Pass class, not instance
-    DatacenterAction,
-    DatacenterObservation,
-    max_concurrent_envs=4,  # Allow 4 concurrent sessions
+from server.environment import DCEnvironment
+
+env = DCEnvironment(task="easy-single-zone")
+result = env.reset()
+obs = result.observation
+
+# Build a DCAction and step
+from server.models import DCAction, ZoneAdjustment
+action = DCAction(
+    zone_adjustments=[ZoneAdjustment(zone_id="zone_main", fan_speed_pct=70.0, supply_air_temp_setpoint_c=20.0)],
+    chiller_setpoint_c=10.0,
+    chiller_active=True,
+    reasoning="Moderate cooling to recover from overheat"
 )
+step_result = env.step(action)
+print(step_result.reward, step_result.done)
 ```
 
-Then multiple clients can connect simultaneously:
+---
 
-```python
-from datacenter_env import DatacenterAction, DatacenterEnv
-from concurrent.futures import ThreadPoolExecutor
+## Known Caveats
 
-def run_episode(client_id: int):
-    with DatacenterEnv(base_url="http://localhost:8000") as env:
-        result = env.reset()
-        for i in range(10):
-            result = env.step(DatacenterAction(message=f"Client {client_id}, step {i}"))
-        return client_id, result.observation.message_length
+### Thermal-time disconnect
+The physics engine always uses `SECONDS_PER_STEP = 300` (5 real minutes) for heat transfer calculations. With `step_scale > 1`, the simulated clock advances faster than the thermal equations assume. This means temperatures change more slowly per step than they would in a true high-speed simulation. The effect is intentional — it keeps individual temperature steps manageable — but it means a zone in the hard task at step_scale=7.2 may appear thermally stable even as the clock jumps 36 minutes.
 
-# Run 4 episodes concurrently
-with ThreadPoolExecutor(max_workers=4) as executor:
-    results = list(executor.map(run_episode, range(4)))
-```
+### Easy task flat load
+The easy scenario uses a constant IT load of 450 kW throughout. There is no diurnal variation. The full `_default_load_curve` is loaded but the scenario's single zone has a constant `base_it_load_kw`, so the curve has no practical effect. The challenge is purely thermal recovery and PUE optimisation.
 
-## Development & Testing
+### Sensor fault is one-directional
+The medium task's sensor fault only drifts upward (reports higher than true). A naive agent that trusts the sensor will over-cool. An agent that ignores all sensor readings entirely will also perform poorly. The intended signal is `sensor_confidence < 0.5` → cross-check against `cold_aisle_temp_c`.
 
-### Direct Environment Testing
+### Chiller cannot be re-enabled mid-episode (hard task)
+Once `chiller_fault_step` triggers and the chiller goes offline, setting `chiller_active: true` in the action has no effect — the simulation ignores it. The agent must survive on fans and free cooling alone from step 8 onward. The system prompt warns the agent of this, but LLMs that ignore the protocol may waste steps attempting to re-enable the chiller.
 
-Test the environment logic directly without starting the HTTP server:
+### LLM thermal inertia blindspot
+Zero-shot LLMs often react too late to temperature trends. The environment's `boundary_margin` reward component and the system prompt's thermal inertia guidance both try to mitigate this. The `_compute_alerts()` efficiency nudge also pushes back when fans are high on an already-cool zone. These are heuristic measures; a well-fine-tuned agent would outperform a zero-shot one significantly.
 
-```bash
-# From the server directory
-python3 server/datacenter_env_environment.py
-```
+### Success thresholds
+Per-task success thresholds are calibrated to each difficulty:
+- Easy: ≥ 0.55
+- Medium: ≥ 0.50
+- Hard: ≥ 0.40
 
-This verifies that:
-- Environment resets correctly
-- Step executes actions properly
-- State tracking works
-- Rewards are calculated correctly
-
-### Running Locally
-
-Run the server locally for development:
-
-```bash
-uvicorn server.app:app --reload
-```
-
-## Project Structure
-
-```
-datacenter_env/
-├── .dockerignore         # Docker build exclusions
-├── __init__.py            # Module exports
-├── README.md              # This file
-├── openenv.yaml           # OpenEnv manifest
-├── pyproject.toml         # Project metadata and dependencies
-├── uv.lock                # Locked dependencies (generated)
-├── client.py              # DatacenterEnv client
-├── models.py              # Action and Observation models
-└── server/
-    ├── __init__.py        # Server module exports
-    ├── datacenter_env_environment.py  # Core environment logic
-    ├── app.py             # FastAPI application (HTTP + WebSocket endpoints)
-    └── Dockerfile         # Container image definition
-```
+These are lower than 0.6 for harder tasks because the scenario's physical difficulty (cascading failure, faulty sensor) genuinely limits achievable scores for a zero-shot agent.

@@ -6,6 +6,7 @@
 
 """Datacenter Env environment server components."""
 
-from .datacenter_env_environment import DCEnvironment
+from .client import DCEnv
+from .environment import DCEnvironment
 
-__all__ = ["DCEnvironment"]
+__all__ = ["DCEnvironment", "DCEnv"]
