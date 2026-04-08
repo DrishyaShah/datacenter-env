@@ -13,21 +13,22 @@ Fault schedule (injected via FacilityState.chiller_fault_step; rescaled by step_
   Step 8  → Chiller goes fully offline (chiller_active = False)
              (rescaled from original step 20; CHILLER_OFFLINE_STEP=8)
 
-After step 8 the agent has ONLY fan + free-air cooling available.
-Outside temperature and wet-bulb follow a realistic 24-hour cycle,
-giving meaningful free-cooling potential only at night (steps 0–4
-and ~33–40 in the condensed timeline, rescaled from 0–30 and 240–288).
+After step 8 the agent has ONLY fan + free-air cooling available.  The episode
+starts at 08:00 (morning ramp-up) so the chiller failure occurs during rising
+outdoor temperature and peak IT load — no night-time free-cooling buffer.
+Critical zones start at 25–26 °C (already stressed) and IT loads at 90 % so
+the agent faces immediate thermal pressure even before the fault.
 
 Carbon intensity follows the default 24-hr curve (condensed step references):
-  Steps  0–6  : low     (night renewables, rescaled from 0–40)
-  Steps 11–22 : high→critical_high (midday grid demand, rescaled from 80–160)
-  Steps 28–40 : medium→low (evening wind, rescaled from 200–288)
+  Steps  0–3  : medium (08:00–09:48, morning ramp)
+  Steps  4–18 : high→critical_high (10:00–16:48, midday grid demand)
+  Steps 19–40 : medium→low (evening wind + overnight)
 
 Hard termination: any critical zone > 32 °C for 5+ consecutive steps → score = 0.
 
 Episode: 40 steps × 36 min/step = 24 hours simulated time (condensed, step_scale=7.2).
 Thermal physics run at 5-min granularity; clock and load advance at 36-min/step.
-Start time: 00:00 — full diurnal cycle.
+Start time: 08:00 — morning ramp, immediate thermal stress.
 """
 
 import math
@@ -43,8 +44,8 @@ from ..simulation import (
 
 # ── Scenario constants ────────────────────────────────────────────────────────
 
-_START_HOUR = 0.0       # 00:00 — full 24-hr episode
-_PID_BASELINE_PUE = 1.48   # PID fails badly after chiller loss; set low to be fair
+_START_HOUR = 8.0       # 08:00 — morning ramp-up; chiller fails during peak heat + load
+_PID_BASELINE_PUE = 1.50   # slightly higher baseline to reflect stressed start conditions
 
 
 # ── Weather curves (288 steps, 5-min resolution) ──────────────────────────────
@@ -118,44 +119,46 @@ def build_hard_scenario(seed: int = 0) -> FacilityState:
     element.
     """
     # ── zone_ai_1 — critical, primary AI inference cluster ────────────────────
+    # Starts at 25 °C (already stressed at 08:00) with IT at 90 % baseline.
+    # This creates immediate thermal pressure even before the chiller fault.
     zone_ai_1 = ZoneState(
         zone_id="zone_ai_1",
-        temp_c=23.0,
-        it_load_kw=500.0 * 0.72,       # 72 % of base at 00:00
-        fan_speed_pct=70.0,
+        temp_c=25.0,
+        it_load_kw=500.0 * 0.90,       # 90 % of base at 08:00 — morning ramp already running
+        fan_speed_pct=72.0,
         cooling_capacity_kw=560.0,
         setpoint_c=20.0,
-        humidity_pct=44.0,
+        humidity_pct=46.0,
         sensor_faulty=False,
-        hot_aisle_temp_c=31.0,
+        hot_aisle_temp_c=33.5,
         supply_air_temp_c=20.0,
         supply_air_temp_setpoint_c=20.0,
         zone_priority=PRIORITY_CRITICAL,
         sensor_drift_c=0.0,
         sensor_confidence=1.0,
         base_it_load_kw=500.0,
-        it_load_pct=0.72,
+        it_load_pct=0.90,
         thermal_mass_kj_per_k=944.0,   # 500/450 × 850
     )
 
     # ── zone_ai_2 — critical, secondary AI inference cluster ──────────────────
     zone_ai_2 = ZoneState(
         zone_id="zone_ai_2",
-        temp_c=23.5,
-        it_load_kw=480.0 * 0.72,
-        fan_speed_pct=68.0,
+        temp_c=25.5,
+        it_load_kw=480.0 * 0.90,
+        fan_speed_pct=70.0,
         cooling_capacity_kw=540.0,
         setpoint_c=20.0,
-        humidity_pct=44.0,
+        humidity_pct=46.0,
         sensor_faulty=False,
-        hot_aisle_temp_c=31.5,
+        hot_aisle_temp_c=34.0,
         supply_air_temp_c=20.0,
         supply_air_temp_setpoint_c=20.0,
         zone_priority=PRIORITY_CRITICAL,
         sensor_drift_c=0.0,
         sensor_confidence=1.0,
         base_it_load_kw=480.0,
-        it_load_pct=0.72,
+        it_load_pct=0.90,
         thermal_mass_kj_per_k=907.0,   # 480/450 × 850
     )
 
@@ -163,90 +166,97 @@ def build_hard_scenario(seed: int = 0) -> FacilityState:
     # Warmer at start — agent may need to sacrifice this zone for the AI clusters.
     zone_storage = ZoneState(
         zone_id="zone_storage",
-        temp_c=24.0,
-        it_load_kw=200.0 * 0.72,
-        fan_speed_pct=55.0,
+        temp_c=25.0,
+        it_load_kw=200.0 * 0.90,
+        fan_speed_pct=58.0,
         cooling_capacity_kw=230.0,
         setpoint_c=22.0,
-        humidity_pct=47.0,
+        humidity_pct=49.0,
         sensor_faulty=False,
-        hot_aisle_temp_c=32.0,
+        hot_aisle_temp_c=33.0,
         supply_air_temp_c=22.0,
         supply_air_temp_setpoint_c=22.0,
         zone_priority=PRIORITY_MEDIUM,
         sensor_drift_c=0.0,
         sensor_confidence=1.0,
         base_it_load_kw=200.0,
-        it_load_pct=0.72,
+        it_load_pct=0.90,
         thermal_mass_kj_per_k=378.0,   # 200/450 × 850
     )
 
     # ── zone_infra — low priority, monitoring / logging ───────────────────────
-    # Cheapest to sacrifice. Higher starting temp to create immediate tension.
+    # Cheapest to sacrifice. Higher starting temp and reduced fans create
+    # immediate tension, forcing triage decisions from step 1.
     zone_infra = ZoneState(
         zone_id="zone_infra",
-        temp_c=25.0,
-        it_load_kw=120.0 * 0.72,
+        temp_c=26.0,
+        it_load_kw=120.0 * 0.90,
         fan_speed_pct=50.0,
         cooling_capacity_kw=140.0,
         setpoint_c=23.0,
-        humidity_pct=48.0,
+        humidity_pct=50.0,
         sensor_faulty=False,
-        hot_aisle_temp_c=33.0,
+        hot_aisle_temp_c=34.5,
         supply_air_temp_c=23.0,
         supply_air_temp_setpoint_c=23.0,
         zone_priority=PRIORITY_LOW,
         sensor_drift_c=0.0,
         sensor_confidence=1.0,
         base_it_load_kw=120.0,
-        it_load_pct=0.72,
+        it_load_pct=0.90,
         thermal_mass_kj_per_k=227.0,   # 120/450 × 850
     )
 
     outside_temps = _hard_outside_temp_curve()
-    wet_bulbs = _hard_wet_bulb_curve()
+    wet_bulbs     = _hard_wet_bulb_curve()
+
+    # Index into the weather curves at the start hour so the episode begins at
+    # the right point in the 24-hr diurnal cycle.
+    _start_idx = int(_START_HOUR * 60 / 5)   # 5-min steps from midnight
+    _start_idx = min(_start_idx, len(outside_temps) - 1)
 
     facility = FacilityState(
         zones=[zone_ai_1, zone_ai_2, zone_storage, zone_infra],
-        outside_temp_c=outside_temps[0],       # 16 °C at midnight
-        # chiller — healthy at start; fault injected at step 15
+        outside_temp_c=outside_temps[_start_idx],   # ~20 °C at 08:00
+        # chiller — healthy at start; fault injected at step 15 (rescaled → step 3)
         chiller_active=True,
         chiller_cop=3.5,
         chiller_setpoint_c=10.0,
-        chiller_fault_step=15,                 # ← fault trigger
+        chiller_fault_step=15,                       # ← raw fault step (rescaled in reset())
         chiller_fault_level=0.0,
-        # weather
-        wet_bulb_temp_c=wet_bulbs[0],
+        # weather — starting at 08:00 in the diurnal cycle
+        wet_bulb_temp_c=wet_bulbs[_start_idx],
         # time
         timestamp_hour=_START_HOUR,
         step_number=0,
         # power
         ups_efficiency=0.96,
-        # carbon
+        # carbon — 08:00 is already in the medium-carbon morning ramp (≈0.60)
         grid_carbon_curve=_default_carbon_curve(),
-        grid_carbon_intensity="low",
-        grid_carbon_intensity_normalized=0.20,  # 00:00 = 0.20 per default curve
-        # load — heavy inference load throughout
+        grid_carbon_intensity="medium",
+        grid_carbon_intensity_normalized=0.60,   # 08:00 value from default curve
+        # load — inference load already at 90 % at 08:00
         load_curve=_hard_load_curve(),
         # grader reference
         pid_baseline_pue=_PID_BASELINE_PUE,
-        # context — rich text for LLM agents
+        # context
         maintenance_notes=[],
         upcoming_events=[
-            "CRITICAL: Chiller health monitoring has flagged an anomaly. "
-            "COP degradation may begin within the next 75 minutes.",
-            "Carbon intensity forecast: LOW until 06:00, rising to CRITICAL_HIGH "
+            "CRITICAL: Chiller health monitoring detected an anomaly at 07:45. "
+            "COP degradation is imminent — expect fault within 2–3 steps.",
+            "Carbon intensity: MEDIUM now (08:00), rising to CRITICAL_HIGH "
             "between 10:00–16:00, easing to MEDIUM by 20:00.",
-            "zone_ai_1 and zone_ai_2 are running active inference workloads. "
-            "SLA requires cold-aisle temp < 30 °C at all times.",
+            "zone_ai_1 and zone_ai_2 are at 90 % load running active inference. "
+            "SLA requires cold-aisle temp ≤ 30 °C at all times.",
             "zone_infra can tolerate up to 29 °C for short periods without data loss.",
-            "Free-cooling via economiser is available while outside temp < 18 °C "
-            "(approximately the first 2.5 hours and the final hour of the episode).",
+            "Free-cooling via economiser is available only when outside temp < 18 °C. "
+            "Outside is currently ~20 °C — free cooling unavailable until tonight.",
         ],
     )
 
-    # Attach per-step weather curves for environment.py to use if desired
-    facility._outside_temp_curve = outside_temps
-    facility._wet_bulb_curve = wet_bulbs
+    # Attach per-step weather curves starting from _start_idx so environment.py
+    # can update outside_temp_c each step relative to the episode start.
+    facility._outside_temp_curve = outside_temps[_start_idx:]
+    facility._wet_bulb_curve     = wet_bulbs[_start_idx:]
 
     return facility

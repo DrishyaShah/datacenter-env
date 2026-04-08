@@ -356,14 +356,22 @@ class DCEnvironment(Environment):
     # ── History buffer ─────────────────────────────────────────────────────────
 
     def _push_history_snapshot(self):
-        """Append a compact per-zone snapshot to the rolling history buffer."""
+        """Append a compact per-zone snapshot to the rolling history buffer.
+
+        For sensor-faulty zones, records the reported (potentially drifted)
+        cold-aisle reading rather than the internal ground-truth value, so the
+        history presented to the agent is consistent with the per-step observation.
+        """
         snapshot = {
             "step": self._step_count,
             "pue": self._facility.pue,
             "zones": {
                 z.zone_id: {
-                    "cold_aisle_temp_c": z.temp_c,
-                    "hot_aisle_temp_c": z.hot_aisle_temp_c,
+                    # Mirror the observation rule: faulty sensors show reported reading.
+                    "cold_aisle_temp_c": (
+                        z.reported_temp_c if z.sensor_faulty else round(z.temp_c, 3)
+                    ),
+                    "hot_aisle_temp_c": round(z.hot_aisle_temp_c, 3),
                     "fan_speed_pct": z.fan_speed_pct,
                 }
                 for z in self._facility.zones
@@ -452,6 +460,7 @@ class DCEnvironment(Environment):
             chiller_setpoint_c=raw["chiller_setpoint_c"],
             chiller_cop=raw["chiller_cop"],
             chiller_fault_detected=self._chiller_fault_detected(),
+            chiller_fault_status=self._chiller_fault_status(),
             ups_efficiency=raw["ups_efficiency"],
             current_pue=raw["current_pue"],
             free_cooling_potential=raw["free_cooling_potential"],
@@ -467,6 +476,7 @@ class DCEnvironment(Environment):
             ),
             maintenance_notes=raw.get("maintenance_notes", []),
             upcoming_events=raw.get("upcoming_events", []),
+            active_alerts=self._compute_active_alerts(),
         )
 
     # ── Helper: chiller fault detection (observable) ───────────────────────────
@@ -482,6 +492,21 @@ class DCEnvironment(Environment):
             return False
         current_cop = self._facility.chiller_cop
         return current_cop < (self._base_chiller_cop * CHILLER_FAULT_COP_FRACTION)
+
+    def _chiller_fault_status(self) -> str:
+        """
+        Returns a human-readable chiller health label:
+          'nominal'   — chiller running normally
+          'degrading' — COP has dropped below 60 % of baseline; still provides cooling
+          'offline'   — chiller is fully failed; chiller_active=True in actions is ignored
+        """
+        if not self._facility.chiller_active:
+            return "offline"
+        if self._base_chiller_cop > 0:
+            current_cop = self._facility.chiller_cop
+            if current_cop < (self._base_chiller_cop * CHILLER_FAULT_COP_FRACTION):
+                return "degrading"
+        return "nominal"
 
     # ── Helper: load curve phase ───────────────────────────────────────────────
 
@@ -503,6 +528,109 @@ class DCEnvironment(Environment):
             return "ramp_down"
         else:
             return "idle"
+
+    # ── Alert generation (environment-level, not inference-script concern) ────
+
+    _SAFE_TEMP_MIN = 18.0
+    _SAFE_TEMP_MAX = 27.0
+
+    def _compute_active_alerts(self) -> List[str]:
+        """
+        Derive structured alert strings from the current facility state.
+
+        These are part of the observation so every client (inference script,
+        HTTP evaluator, trained policy) sees them without extra computation.
+        Alerts cover: chiller faults, temperature violations / near-misses,
+        sensor faults, rising temperature trends, efficiency hints, SLA streaks.
+        """
+        alerts: List[str] = []
+        f = self._facility
+
+        # ── Chiller state ─────────────────────────────────────────────────────
+        fault_status = self._chiller_fault_status()
+        if fault_status == "offline":
+            alerts.append(
+                "CRITICAL: Chiller is OFFLINE — fans are the ONLY cooling available. "
+                "Set critical-zone fans to 90–100 % immediately. "
+                "Setting chiller_active=true in your action will have NO effect."
+            )
+        elif fault_status == "degrading":
+            alerts.append(
+                f"WARNING: Chiller is DEGRADING (COP={f.chiller_cop:.2f}, "
+                f"nominal {self._base_chiller_cop:.2f}). "
+                "Cooling capacity reduced. Ramp fans up now before chiller fails."
+            )
+
+        # ── Per-zone alerts ───────────────────────────────────────────────────
+        for z in f.zones:
+            # Use observation-level temperature (faulty = reported, healthy = true)
+            obs_temp = z.reported_temp_c if z.sensor_faulty else z.temp_c
+            conf = z.sensor_confidence
+            fan  = z.fan_speed_pct
+
+            # Active temperature violations
+            if obs_temp > self._SAFE_TEMP_MAX:
+                alerts.append(
+                    f"VIOLATION: {z.zone_id} OVERHEATING at {obs_temp:.1f} °C "
+                    f"(limit {self._SAFE_TEMP_MAX} °C). Immediate max cooling required."
+                )
+            elif obs_temp < self._SAFE_TEMP_MIN:
+                alerts.append(
+                    f"VIOLATION: {z.zone_id} OVERCOOLING at {obs_temp:.1f} °C "
+                    f"(floor {self._SAFE_TEMP_MIN} °C). Raise supply setpoint +2 °C, cut fan 15–20 %."
+                )
+            # Near-boundary warnings
+            elif self._SAFE_TEMP_MAX - 1.0 < obs_temp <= self._SAFE_TEMP_MAX:
+                alerts.append(
+                    f"WARNING: {z.zone_id} at {obs_temp:.1f} °C — within 1 °C of "
+                    f"violation limit. Increase cooling now."
+                )
+            elif self._SAFE_TEMP_MIN <= obs_temp < self._SAFE_TEMP_MIN + 1.0:
+                alerts.append(
+                    f"WARNING: {z.zone_id} at {obs_temp:.1f} °C — within 1 °C of "
+                    "overcooling floor. Reduce fan or raise supply setpoint."
+                )
+
+            # Sensor fault
+            if conf < 0.5:
+                bias = round(z.reported_temp_c - z.temp_c, 1)
+                alerts.append(
+                    f"SENSOR FAULT: {z.zone_id} sensor_confidence={conf:.2f}. "
+                    f"Cold-aisle reading may be off by ~{abs(bias):.1f} °C. "
+                    "Cross-check with hot_aisle_temp_c and supply_air_temp_c "
+                    "to estimate true thermal state."
+                )
+
+            # Efficiency hint: safe + stable zone with wastefully high fans
+            prev_snap = list(self._history)[-1] if self._history else None
+            if prev_snap and z.zone_id in prev_snap.get("zones", {}):
+                prev_temp = prev_snap["zones"][z.zone_id].get("cold_aisle_temp_c", obs_temp)
+                delta = obs_temp - prev_temp
+                if (
+                    self._SAFE_TEMP_MIN + 0.5 < obs_temp < self._SAFE_TEMP_MAX - 2.0
+                    and abs(delta) < 0.3
+                    and fan > 70.0
+                ):
+                    alerts.append(
+                        f"EFFICIENCY: {z.zone_id} stable at {obs_temp:.1f} °C with fan "
+                        f"at {fan:.0f} % — reduce to 45–65 % to improve PUE."
+                    )
+
+        # ── Carbon ────────────────────────────────────────────────────────────
+        if f.grid_carbon_intensity_normalized > 0.80:
+            alerts.append(
+                f"CARBON CRITICAL ({f.grid_carbon_intensity_normalized:.2f}): Grid at "
+                "peak emissions. Reduce fan speeds on safe zones — every % counts."
+            )
+
+        # ── SLA streak ────────────────────────────────────────────────────────
+        if self._sla_violation_streak >= 5:
+            alerts.append(
+                f"SLA ALERT: {self._sla_violation_streak} consecutive violation steps. "
+                "Hard termination triggers at 10. Take urgent corrective action NOW."
+            )
+
+        return alerts
 
     # ── Helper: load forecast ──────────────────────────────────────────────────
 

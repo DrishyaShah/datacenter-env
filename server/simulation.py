@@ -54,8 +54,12 @@ MASS_FLOW_REF_KGS         = 50.0    # mass flow at 100% fan for the reference zo
 # Cube-law fan power coefficient (kW at 100 %)
 FAN_POWER_MAX_KW = 8.0
 
-# Envelope heat-transfer coefficient (kW / °C)
-ENVELOPE_CONDUCTANCE = 0.5
+# Envelope heat-transfer coefficient (kW / °C).
+# Real data centres are extremely well insulated; at a 10 °C indoor-outdoor
+# differential a 500 kW zone loses only ~0.5 kW through the fabric —
+# negligible compared to IT heat.  The previous value of 0.5 kW/°C was
+# 10× too high and dominated zone-level thermal behaviour unrealistically.
+ENVELOPE_CONDUCTANCE = 0.05
 
 # Hot-aisle temperature rise coefficient
 HOT_AISLE_RISE_COEFF = 5.0
@@ -457,8 +461,10 @@ class FacilityState:
         """
         Apply agent action, enforcing per-step delta limits.
 
-        Clips any action component that exceeds its rate limit and returns
-        an info dict flagging which levers were clipped.
+        Rate limits scale with the step's simulated duration so they remain
+        physically consistent under timeline condensation.  At 5 min/step
+        (easy task) the baseline limits apply; at 36 min/step (hard task)
+        limits are multiplied by 7.2, capped at the physical range.
 
         Returns
         -------
@@ -469,6 +475,15 @@ class FacilityState:
               "zones": {zone_id: {"fan_clipped": bool, "supply_temp_clipped": bool}}
             }
         """
+        # Scale limits proportionally to simulated minutes per step.
+        # minutes_per_step / 5.0 gives 1.0 for the reference (easy) task.
+        scale = self.minutes_per_step / 5.0
+        eff_fan_delta     = min(MAX_FAN_DELTA_PER_STEP    * scale, FAN_SPEED_MAX)
+        eff_supply_delta  = min(MAX_SUPPLY_TEMP_DELTA     * scale,
+                                SUPPLY_AIR_TEMP_MAX - SUPPLY_AIR_TEMP_MIN)
+        eff_chiller_delta = min(MAX_CHILLER_SETPOINT_DELTA * scale,
+                                CHILLER_SETPOINT_MAX - CHILLER_SETPOINT_MIN)
+
         info: Dict = {
             "chiller_setpoint_clipped": False,
             "chiller_toggled": False,
@@ -479,7 +494,7 @@ class FacilityState:
 
         # Chiller setpoint
         raw_delta = action.chiller_setpoint_c - last_action.chiller_setpoint_c
-        clipped_delta = _clip(raw_delta, MAX_CHILLER_SETPOINT_DELTA)
+        clipped_delta = _clip(raw_delta, eff_chiller_delta)
         if abs(clipped_delta - raw_delta) > 1e-6:
             info["chiller_setpoint_clipped"] = True
         new_setpoint = last_action.chiller_setpoint_c + clipped_delta
@@ -487,10 +502,20 @@ class FacilityState:
             _clip_bounds(new_setpoint, CHILLER_SETPOINT_MIN, CHILLER_SETPOINT_MAX), 2
         )
 
-        # Chiller on/off — allowed freely (nuclear option, but costly)
-        if self.chiller_fault_level < 1.0:   # cannot re-enable a fully failed chiller
+        # Chiller on/off — allowed freely (nuclear option, but costly).
+        # Once fully failed (fault_level == 1.0) the toggle is ignored and a
+        # maintenance_note is appended so the agent gets explicit feedback.
+        if self.chiller_fault_level < 1.0:
             self.chiller_active = action.chiller_active
             info["chiller_toggled"] = (action.chiller_active != last_action.chiller_active)
+        elif action.chiller_active and not self.chiller_active:
+            # Agent asked to re-enable a fully failed chiller — inform it.
+            note = (
+                "ACTION IGNORED: chiller_active=true submitted but chiller is "
+                "offline due to fault. Fans are the only available cooling."
+            )
+            if note not in self.maintenance_notes:
+                self.maintenance_notes.append(note)
 
         # ── Per-zone levers ───────────────────────────────────────────────────
 
@@ -514,7 +539,7 @@ class FacilityState:
 
             # Fan speed
             fan_raw_delta = adj.fan_speed_pct - last_fan
-            fan_clipped_delta = _clip(fan_raw_delta, MAX_FAN_DELTA_PER_STEP)
+            fan_clipped_delta = _clip(fan_raw_delta, eff_fan_delta)
             if abs(fan_clipped_delta - fan_raw_delta) > 1e-6:
                 zone_info["fan_clipped"] = True
             zone.fan_speed_pct = round(
@@ -523,7 +548,7 @@ class FacilityState:
 
             # Supply air temperature setpoint
             supply_raw_delta = adj.supply_air_temp_setpoint_c - last_supply
-            supply_clipped_delta = _clip(supply_raw_delta, MAX_SUPPLY_TEMP_DELTA)
+            supply_clipped_delta = _clip(supply_raw_delta, eff_supply_delta)
             if abs(supply_clipped_delta - supply_raw_delta) > 1e-6:
                 zone_info["supply_temp_clipped"] = True
             zone.supply_air_temp_setpoint_c = round(
@@ -607,7 +632,10 @@ class FacilityState:
             "zones": [
                 {
                     "zone_id": z.zone_id,
-                    "cold_aisle_temp_c": round(z.temp_c, 3),
+                    # For faulty zones the cold-aisle sensor reading is degraded — expose the
+                    # reported (potentially drifted) value so agents face a genuine inference
+                    # challenge.  The true internal temp_c is reserved for graders only.
+                    "cold_aisle_temp_c": z.reported_temp_c if z.sensor_faulty else round(z.temp_c, 3),
                     "hot_aisle_temp_c": round(z.hot_aisle_temp_c, 3),
                     "reported_temp_c": z.reported_temp_c,
                     "it_load_kw": round(z.it_load_kw, 1),

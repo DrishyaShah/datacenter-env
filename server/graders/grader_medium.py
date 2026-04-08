@@ -55,10 +55,14 @@ FINAL_SENSOR_QUALITY_WEIGHT = 0.20
 FINAL_PEAK_WEIGHT           = 0.20
 
 # ── Step reward weights ───────────────────────────────────────────────────────
-STEP_TEMP_WEIGHT   = 0.50
-STEP_PUE_WEIGHT    = 0.25
-STEP_CARBON_WEIGHT = 0.15
-STEP_ROUGH_WEIGHT  = 0.10
+# These are aligned with final_score() components so per-step optimisation is
+# consistent with the evaluation objective.  Sensor inference quality is
+# included at reduced weight (full assessment is only possible at episode end).
+STEP_TEMP_WEIGHT    = 0.45   # slightly reduced to accommodate sensor signal
+STEP_PUE_WEIGHT     = 0.25
+STEP_CARBON_WEIGHT  = 0.15
+STEP_ROUGH_WEIGHT   = 0.10
+STEP_SENSOR_WEIGHT  = 0.05   # per-step sensor inference quality (aligns with final 20 % weight)
 
 
 # ── Grader ────────────────────────────────────────────────────────────────────
@@ -180,9 +184,20 @@ class MediumGrader:
         roughness_reward  = -STEP_ROUGH_WEIGHT * roughness_penalty
 
         # ── Sensor inference quality for zone_ai ──────────────────────────────
+        # Included as a small per-step signal to align per-step reward with the
+        # final_score() component (which weights sensor quality at 20 %).
+        # The per-step contribution is intentionally small (STEP_SENSOR_WEIGHT=0.05)
+        # because the full quality assessment requires the episode history.
         supply_error = _compute_sensor_inference_error(action, zones, step_num)
         if supply_error is not None:
             self.zone_ai_supply_errors.append(supply_error)
+        # sensor_reward: 0.05 × (1 − normalised_error); only active once a sensor
+        # fault is detectable (supply_error is not None means zone_ai is in this episode).
+        sensor_reward = 0.0
+        if supply_error is not None:
+            # Max tolerable error is 6 °C (same as final_score normalisation).
+            sensor_quality = max(0.0, 1.0 - supply_error / 6.0)
+            sensor_reward = STEP_SENSOR_WEIGHT * sensor_quality
 
         # ── Stability bonus ───────────────────────────────────────────────────
         # Average consecutive safe steps across all zones
@@ -193,7 +208,8 @@ class MediumGrader:
 
         # ── Combine ───────────────────────────────────────────────────────────
         total = round(
-            temp_reward + pue_reward + carbon_reward + roughness_reward + stability_bonus,
+            temp_reward + pue_reward + carbon_reward + roughness_reward
+            + sensor_reward + stability_bonus,
             4,
         )
         total = max(-1.0, min(1.0, total))
@@ -203,6 +219,7 @@ class MediumGrader:
             "pue_reward":        round(pue_reward, 4),
             "carbon_reward":     round(carbon_reward, 4),
             "roughness_penalty": round(roughness_reward, 4),
+            "sensor_reward":     round(sensor_reward, 4),
             "stability_bonus":   round(stability_bonus, 4),
             "safety_penalty":    0.0,   # folded into temp_reward for medium task
             "all_zones_safe":    all_zones_safe,

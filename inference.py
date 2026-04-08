@@ -63,7 +63,7 @@ INFERENCE_MAX_STEPS_PER_TASK: Optional[int] = (
 # OpenAI client — initialised in main() after key validation
 client: Optional[OpenAI] = None
 
-# Safe-band bounds — shared by alert generation and history tagging
+# Safe-band bounds — used for history event tagging
 TEMP_MAX = 27.0
 TEMP_MIN = 18.0
 
@@ -158,33 +158,40 @@ SYSTEM_PROMPT = textwrap.dedent("""
 
     === SENSOR CONFIDENCE RULE ===
     - Each zone has a sensor_confidence field [0.0-1.0].
-    - If sensor_confidence < 0.5, the reported_temp_c is UNRELIABLE (sensor may be drifted
-      or faulty — reporting up to 12 °C above the true temperature).
-    - When sensor_confidence < 0.5, trust cold_aisle_temp_c instead of reported_temp_c.
-    - Never set max fans based solely on a high reported_temp_c when sensor_confidence < 0.5.
-      Instead use cold_aisle_temp_c and hot_aisle_temp_c to judge the true thermal state.
+    - If sensor_confidence < 0.7, the cold_aisle_temp_c sensor may be DRIFTED.
+      The reported value could be up to 12 °C above the true temperature.
+    - When sensor_confidence < 0.5, DO NOT trust cold_aisle_temp_c or reported_temp_c.
+      Instead infer the true thermal state from:
+        * hot_aisle_temp_c   (exhaust air — always accurate, reflects real IT heat)
+        * supply_air_temp_c  (delivered air temperature — accurate)
+        * it_load_kw         (actual IT power draw — accurate)
+      A physics check: true_cold_aisle ≈ hot_aisle − it_load / (mass_flow × 1.006)
+      If hot_aisle is below 32 °C and load is moderate, the zone is likely fine.
+    - Never set max fans based solely on a high cold_aisle_temp_c when sensor_confidence < 0.5.
 
     === CHILLER FAILURE PROTOCOL (HIGHEST PRIORITY AFTER SAFETY) ===
-    If chiller_fault_detected is True OR chiller_cop < 2.0:
-      - You have 5-10 steps before the chiller goes offline.
+    Check the chiller_fault_status field every step:
+
+    chiller_fault_status = "degrading":
+      - COP is dropping. You have 3-8 steps before the chiller goes fully offline.
       - IMMEDIATELY: set ALL zone fans to 80-90%, supply setpoints to 18-19 °C.
-      - Do NOT wait for temperatures to rise before acting. Pre-cool now.
-      - Continue running chiller (chiller_active: true) — it still helps even degraded.
-      - Do NOT raise chiller_setpoint_c above 10 during a fault — keep the water cold.
+      - Pre-cool now — do NOT wait for temperatures to rise.
+      - Keep chiller_active: true — degraded COP still helps.
+      - Do NOT raise chiller_setpoint_c above 10 — keep the water cold.
 
-    If chiller_active is False (chiller is offline):
-      - Fans are your ONLY cooling — chiller provides zero cooling capacity.
+    chiller_fault_status = "offline":
+      - Fans are your ONLY cooling. Chiller provides ZERO cooling capacity.
+      - Setting chiller_active: true in your action is IGNORED (you will see a
+        maintenance_note confirming this).
       - Set CRITICAL zones (zone_priority=2) to fan=90-100%, supply=16-18 °C.
-      - Accept LOW-priority zones (zone_priority=0) drifting toward 26-27 °C to
-        concentrate cooling capacity on CRITICAL zones.
-      - Carbon cost is irrelevant during a chiller failure — survival takes priority.
-      - Do NOT set chiller_active: true — it will not respond while offline.
-      - Check the "alerts" field each step; it will tell you when the chiller comes back.
+      - Accept LOW-priority zones (zone_priority=0) drifting to 26-27 °C to
+        concentrate remaining cooling on CRITICAL zones.
+      - Carbon cost is irrelevant during a chiller failure — survival first.
 
-    If you see "[CHILLER_FAULT]" or "[CHILLER_OFFLINE]" tags in the step history:
-      - The failure has been ongoing. Review how many steps it has been active.
-      - If 3+ steps of OFFLINE: assume CRITICAL zones need sustained max cooling.
-      - Gradually scale back ONLY once you see temperatures stabilising below 24 °C.
+    "[CHILLER_FAULT]" / "[CHILLER_OFFLINE]" tags in step history:
+      - Failure has been ongoing. Count how many steps OFFLINE.
+      - After 3+ OFFLINE steps: assume CRITICAL zones need sustained max cooling.
+      - Scale back fans only once temperatures are stably below 24 °C.
 
     === CHILLER RULES ===
     - Keep chiller_active true unless you have a specific reason to disable it.
@@ -246,113 +253,6 @@ def _vprint(*args, **kwargs) -> None:
         kwargs.setdefault("flush", True)
         print(*args, **kwargs)
 
-
-# ── Runtime alert generation ──────────────────────────────────────────────────
-def _compute_alerts(obs_dict: dict, prev_temps: dict) -> List[str]:
-    """
-    Derive human-readable alert strings from the current observation.
-
-    These are injected into the LLM's JSON observation so it can react to
-    critical events (chiller failure, temperature violations, sensor faults,
-    rising trends) without having to infer them from raw numbers alone.
-    """
-    alerts: List[str] = []
-    zones = obs_dict.get("zones", [])
-
-    # ── Chiller state ─────────────────────────────────────────────────────────
-    if not obs_dict.get("chiller_active", True):
-        alerts.append(
-            "CRITICAL: Chiller is OFFLINE — fans are your ONLY cooling tool. "
-            "Set all zone fans to 90-100% immediately, especially CRITICAL zones."
-        )
-    elif obs_dict.get("chiller_fault_detected", False):
-        cop = obs_dict.get("chiller_cop", 3.5)
-        alerts.append(
-            f"WARNING: Chiller fault detected (current COP={cop:.2f}, nominal 3.5). "
-            "Chiller may go offline within 5-10 steps. Ramp ALL fans up now."
-        )
-
-    # ── Per-zone alerts ───────────────────────────────────────────────────────
-    for z in zones:
-        zid  = z["zone_id"]
-        temp = z.get("cold_aisle_temp_c", 22.0)
-        conf = z.get("sensor_confidence", 1.0)
-        rep  = z.get("reported_temp_c", temp)
-        prev = prev_temps.get(zid, temp)
-        delta = temp - prev
-
-        # Approaching boundary (1°C margin)
-        if TEMP_MAX - 1.0 < temp <= TEMP_MAX:
-            alerts.append(
-                f"WARNING: {zid} at {temp:.1f}°C — within 1°C of violation limit "
-                f"({TEMP_MAX}°C). Increase cooling now."
-            )
-        elif TEMP_MIN <= temp < TEMP_MIN + 1.0:
-            alerts.append(
-                f"WARNING: {zid} at {temp:.1f}°C — within 1°C of overcooling limit "
-                f"({TEMP_MIN}°C). Reduce fan speed or raise supply setpoint."
-            )
-
-        # Active violation
-        if temp > TEMP_MAX:
-            alerts.append(
-                f"VIOLATION: {zid} is OVERHEATING at {temp:.1f}°C. "
-                "Immediate max cooling required."
-            )
-        elif temp < TEMP_MIN:
-            alerts.append(
-                f"VIOLATION: {zid} is OVERCOOLING at {temp:.1f}°C. "
-                "Raise supply_air_temp_setpoint_c by 2°C and cut fans 15-20%."
-            )
-
-        # Faulty sensor
-        if conf < 0.5:
-            bias = round(rep - temp, 1)
-            alerts.append(
-                f"SENSOR FAULT: {zid} sensor_confidence={conf:.2f} — reported_temp "
-                f"({rep:.1f}°C) is approximately {bias:+.1f}°C off from actual "
-                f"cold_aisle_temp_c ({temp:.1f}°C). "
-                "DO NOT set fans based on reported_temp. Use cold_aisle_temp_c."
-            )
-
-        # Rising fast and already warm
-        if delta > 0.8 and temp > 23.0:
-            alerts.append(
-                f"TREND: {zid} rising fast (+{delta:.1f}°C this step, now {temp:.1f}°C). "
-                "Act now — thermal inertia means it will keep rising 2-3 more steps."
-            )
-
-        # Zone is safe, temperature is stable, but fans are still running high —
-        # signal the LLM to back off for PUE efficiency.
-        fan = z.get("fan_speed_pct", 50.0)
-        if (
-            TEMP_MIN + 0.5 < temp < TEMP_MAX - 2.0  # safely within bounds
-            and abs(delta) < 0.3                      # temperature not changing
-            and fan > 70.0                            # fans are wasteful
-        ):
-            alerts.append(
-                f"EFFICIENCY: {zid} is stable at {temp:.1f}°C with fan at {fan:.0f}% "
-                "— this is wasteful. Reduce fan to 45-65% to improve PUE. "
-                "Thermal inertia will sustain current cooling for 2-3 more steps."
-            )
-
-    # ── Carbon ────────────────────────────────────────────────────────────────
-    carbon = obs_dict.get("carbon_intensity_normalized", 0.5)
-    if carbon > 0.8:
-        alerts.append(
-            f"CARBON CRITICAL ({carbon:.2f}): Grid is at peak emissions. "
-            "Reduce fan speeds where zone temps allow — every percent matters."
-        )
-
-    # ── SLA streak ────────────────────────────────────────────────────────────
-    streak = obs_dict.get("sla_violation_streak", 0)
-    if streak >= 5:
-        alerts.append(
-            f"SLA ALERT: {streak} consecutive violation steps detected. "
-            "Hard termination triggers at 10. Take urgent corrective action NOW."
-        )
-
-    return alerts
 
 
 # ── LLM call with retry on 429 ────────────────────────────────────────────────
@@ -469,6 +369,36 @@ def build_action(llm_result: dict, obs: DCObservation) -> DCAction:
     )
 
 
+def _safe_mode_action(obs: DCObservation) -> DCAction:
+    """
+    Conservative safe-mode fallback used when the LLM is completely unavailable
+    and no prior LLM result exists.
+
+    Strategy: run fans at 85 % on all zones, use a cold supply setpoint (18 °C),
+    and keep chiller active only if it is not already offline (re-enabling a
+    failed chiller is silently ignored by the environment and wastes the action).
+    This is far more conservative than repeating the first LLM step, which may
+    have been tuned to a completely different scenario state.
+    """
+    chiller_alive = obs.chiller_fault_status != "offline"
+    return DCAction(
+        zone_adjustments=[
+            ZoneAdjustment(
+                zone_id=z.zone_id,
+                fan_speed_pct=85.0,
+                supply_air_temp_setpoint_c=18.0,
+            )
+            for z in obs.zones
+        ],
+        chiller_setpoint_c=8.0,    # coldest water when chiller is running
+        chiller_active=chiller_alive,
+        reasoning=(
+            "safe-mode fallback: LLM unavailable, no prior intent. "
+            "Running all fans at 85 %, supply at 18 °C to protect all zones."
+        ),
+    )
+
+
 def _effective_max_steps(task_max: int) -> int:
     if INFERENCE_MAX_STEPS_PER_TASK is not None:
         return min(INFERENCE_MAX_STEPS_PER_TASK, task_max)
@@ -493,7 +423,7 @@ def run_task(task_cfg: dict) -> float:
         obs: DCObservation = env.reset()
 
         _prev_temps: dict = {}
-        _last_llm_result: dict = {}   # last non-empty LLM response — used as fallback intent
+        _last_llm_result: dict = {}     # last non-empty LLM response — held on transient failures
 
         for step in range(1, max_steps + 1):
             obs_dict = {
@@ -503,9 +433,9 @@ def run_task(task_cfg: dict) -> float:
                 "wet_bulb_temp_c": obs.wet_bulb_temp_c,
                 "current_pue": obs.current_pue,
                 "chiller_active": obs.chiller_active,
+                "chiller_fault_status": obs.chiller_fault_status,   # "nominal"|"degrading"|"offline"
                 "chiller_setpoint_c": obs.chiller_setpoint_c,
                 "chiller_cop": obs.chiller_cop,
-                "chiller_fault_detected": obs.chiller_fault_detected,
                 "grid_carbon_intensity": obs.grid_carbon_intensity,
                 "carbon_intensity_normalized": obs.carbon_intensity_normalized,
                 "load_curve_phase": obs.load_curve_phase,
@@ -513,6 +443,8 @@ def run_task(task_cfg: dict) -> float:
                 "zones": [
                     {
                         "zone_id": z.zone_id,
+                        # cold_aisle_temp_c reflects the sensor reading for this zone —
+                        # for faulty sensors it equals reported_temp_c (drifted), NOT ground truth.
                         "cold_aisle_temp_c": z.cold_aisle_temp_c,
                         "hot_aisle_temp_c": z.hot_aisle_temp_c,
                         "reported_temp_c": z.reported_temp_c,
@@ -532,37 +464,29 @@ def run_task(task_cfg: dict) -> float:
                 "upcoming_events": obs.upcoming_events,
             }
 
-            # Inject runtime alerts so the LLM can react to critical events explicitly
-            alerts = _compute_alerts(obs_dict, _prev_temps)
-            if alerts:
-                obs_dict["alerts"] = alerts
+            # Use environment-computed alerts (now part of the observation spec).
+            # These supersede the old inline _compute_alerts() call.
+            if obs.active_alerts:
+                obs_dict["active_alerts"] = obs.active_alerts
 
             error_str = None
             try:
                 llm_result = get_llm_action(obs_dict, step, history)
                 if llm_result:
                     _last_llm_result = llm_result   # store last successful intent
-                action = build_action(llm_result if llm_result else _last_llm_result, obs)
+                # If API call returned empty (quota exhausted / all retries failed),
+                # fall back to the last good LLM result if one exists, otherwise use
+                # safe-mode defaults.  Safe-mode: max fans on all zones, cold chiller,
+                # never enable a failed chiller.
+                effective_result = llm_result if llm_result else _last_llm_result
+                if effective_result:
+                    action = build_action(effective_result, obs)
+                else:
+                    action = _safe_mode_action(obs)
             except Exception as e:
                 error_str = str(e)[:120]
-                _vprint(f"[WARN] step {step} LLM failed ({error_str}), holding last intended action")
-                if _last_llm_result:
-                    action = build_action(_last_llm_result, obs)
-                else:
-                    # No prior LLM intent yet — use safe conservative defaults
-                    action = DCAction(
-                        zone_adjustments=[
-                            ZoneAdjustment(
-                                zone_id=z.zone_id,
-                                fan_speed_pct=70.0,
-                                supply_air_temp_setpoint_c=20.0,
-                            )
-                            for z in obs.zones
-                        ],
-                        chiller_setpoint_c=10.0,
-                        chiller_active=True,
-                        reasoning="fallback: LLM unavailable — safe defaults (no prior intent)",
-                    )
+                _vprint(f"[WARN] step {step} LLM failed ({error_str}), using fallback")
+                action = build_action(_last_llm_result, obs) if _last_llm_result else _safe_mode_action(obs)
 
             action_json = json.dumps(
                 {

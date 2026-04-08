@@ -309,11 +309,30 @@ class HardGrader:
         sla_score = self.steps_critical_safe / self.steps_total
 
         # ── Carbon efficiency ─────────────────────────────────────────────────
-        # Lower average cooling proxy during high-carbon windows = better score.
-        # Score 1.0 if agent did zero high-carbon cooling; 0.0 if always at 100%.
+        # Measures how much the agent reduced cooling during high-carbon windows
+        # relative to a passive baseline of ~70 % average fan speed.
+        #
+        #   proxy_baseline = 0.70  (conservative-but-frozen agent behaviour)
+        #   proxy_floor    = 0.20  (near-minimum achievable while maintaining safety)
+        #
+        # Scoring:
+        #   proxy ≥ 0.70  →  carbon_score = 0.0  (no adaptation, frozen-action level)
+        #   proxy = 0.20  →  carbon_score = 1.0  (maximum carbon efficiency)
+        #
+        # This correctly penalises a frozen action instead of giving it 0.30 credit
+        # simply for not running fans at 100 %.
+        _CARBON_BASELINE = 0.70
+        _CARBON_FLOOR    = 0.20
         if self.high_carbon_cooling_kw:
             avg_high_carbon_cooling = sum(self.high_carbon_cooling_kw) / len(self.high_carbon_cooling_kw)
-            carbon_score = max(0.0, 1.0 - avg_high_carbon_cooling)
+            carbon_score = max(
+                0.0,
+                min(
+                    1.0,
+                    (_CARBON_BASELINE - avg_high_carbon_cooling)
+                    / (_CARBON_BASELINE - _CARBON_FLOOR),
+                ),
+            )
         else:
             carbon_score = 0.5   # episode ended before any high-carbon window — neutral credit
 
@@ -330,10 +349,14 @@ class HardGrader:
             triage_score = 0.5   # no post-fault steps → neutral
 
         # ── Reasoning coherence ───────────────────────────────────────────────
+        # Agents that never provided reasoning receive 0.0 (10 % of final score
+        # is deliberately withheld to penalise silent / fallback agents).
+        # Agents that provided incoherent reasoning score between 0.0–0.5.
+        # Coherent reasoning scores up to 1.0.
         if self.reasoning_coherence_scores:
             reasoning_score = sum(self.reasoning_coherence_scores) / len(self.reasoning_coherence_scores)
         else:
-            reasoning_score = 0.0   # agent never provided reasoning → penalise
+            reasoning_score = 0.0   # agent never provided reasoning
 
         score = (
             FINAL_SLA_WEIGHT       * sla_score

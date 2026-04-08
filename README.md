@@ -78,8 +78,9 @@ Data flow per step:
   LLM JSON action → DCAction (Pydantic) → SimDCAction
   → FacilityState.step() [thermal physics]
   → DCObservation built from FacilityState
+    (includes active_alerts, chiller_fault_status computed by environment)
   → Grader.step() [reward calculation]
-  → StepResult returned to inference.py
+  → DCObservation.reward / .done set and returned to inference.py
   → formatted [STEP] line to stdout + log file
 ```
 
@@ -197,17 +198,22 @@ Episode: 30 steps × 24 min/step (step_scale=4.8)
 │    Step 0–2  : Normal operation (COP ≈ 3.5)                  │
 │    Step 3    : COP begins degrading → 0.8 over 5 steps       │
 │    Step 8    : Chiller OFFLINE — fans only from here         │
-│    Steps 8–16: Recovery window (free-cooling + fans only)    │
+│    Steps 8–16: Recovery window (fans only; no free cooling)  │
 │                                                               │
-│  Carbon: low nights → HIGH midday (steps 11-22) → low eve   │
-│  Free cooling: steps 0–4 and ~33–40 (cool night air)        │
-│  Time: 00:00 → 24:00 (24 hours)                              │
+│  Starting conditions at 08:00 (already stressed):            │
+│    IT loads at 90 %, zone temps 25–26 °C, outside ~20 °C    │
+│    No free-cooling available — outside temp too warm         │
+│                                                               │
+│  Carbon: medium (08:00) → CRITICAL HIGH (10:00–16:00)        │
+│          → medium/low (evening + overnight)                  │
+│  Free cooling: only after ~22:00 when outside drops < 18 °C │
+│  Time: 08:00 → 08:00+24h (full 24-hour simulated arc)        │
 └──────────────────────────────────────────────────────────────┘
 
 Episode: 40 steps × 36 min/step (step_scale=7.2)
 ```
 
-**Goal**: Protect critical AI zones through a chiller failure. Pre-cool before the fault, triage resources post-fault, exploit free cooling windows, and avoid running full fans during high-carbon midday.
+**Goal**: Protect critical AI zones through a chiller failure starting during peak heat and load. Pre-cool before the fault, triage resources post-fault, and avoid running full fans during the high-carbon midday window. Free cooling is unavailable until late night (outside temp stays above 18°C through most of the episode).
 
 **Hard termination**: any critical zone (`zone_ai_1` or `zone_ai_2`) above 32°C for 5+ consecutive steps → episode ends with score 0.
 
@@ -248,7 +254,7 @@ The cold-aisle temperature floor is clamped to prevent physically impossible sub
 
 - **Chiller COP** is temperature-dependent: warmer outside air reduces efficiency. COP degrades as `outside_temp_c` rises (approx. linear from 3.5 at 20°C to lower values at 35°C).
 - **Free cooling** (`free_cooling_potential`) measures how much cooling could be supplied by outside air economiser. Active only when `wet_bulb_temp_c` is meaningfully below target supply temperature. The chiller propagation logic blends free-cooling air only when it is genuinely cooler than the chilled-water target.
-- **Chiller fault** (hard scenario): `chiller_fault_step` triggers COP degradation over 5 steps, followed by full offline state. Detectable via `chiller_fault_detected` flag in observation (set when COP < 60% of baseline).
+- **Chiller fault** (hard scenario): `chiller_fault_step` triggers COP degradation over 5 steps, followed by full offline state. Detectable via `chiller_fault_status` field in observation: `"nominal"` → `"degrading"` → `"offline"`. The legacy `chiller_fault_detected` bool remains for backward compatibility.
 
 ### Diurnal curves
 
@@ -265,7 +271,7 @@ effective_step = raw_step × (minutes_per_step / 5.0)
 target_drift   = min(3.0 + effective_step × 0.18, 12.0)  # caps at +12°C
 ```
 
-`reported_temp_c` includes this drift. `sensor_confidence` degrades from 1.0 → ~0.1 as drift accumulates. `cold_aisle_temp_c` always shows the true physical temperature.
+`reported_temp_c` includes this drift. `sensor_confidence` degrades from 1.0 → ~0.1 as drift accumulates. For zones with an active sensor fault, **`cold_aisle_temp_c` in the observation also reflects the faulty (drifted) sensor reading** — it is no longer ground truth. Only `hot_aisle_temp_c` and `supply_air_temp_c` remain accurate and can be used to infer the true thermal state.
 
 ### Rate limiting on actions
 
@@ -314,6 +320,7 @@ Returned as a `DCObservation` Pydantic model each step. All fields are present f
 | `chiller_setpoint_c` | `float` | Current chilled-water setpoint [6–15] (°C) |
 | `chiller_cop` | `float` | Current chiller coefficient of performance |
 | `chiller_fault_detected` | `bool` | Observable anomaly: True when COP < 60% of baseline or chiller is offline |
+| `chiller_fault_status` | `str` | Three-state chiller health: `"nominal"` / `"degrading"` / `"offline"`. When `"offline"`, `chiller_active=true` in actions is silently ignored by the environment |
 | `ups_efficiency` | `float` | UPS efficiency [0–1] |
 | `current_pue` | `float` | Real-time Power Usage Effectiveness (1.0 = perfect) |
 | `free_cooling_potential` | `float` | Fraction of cooling that could be met by free-air economiser [0–1] |
@@ -322,9 +329,10 @@ Returned as a `DCObservation` Pydantic model each step. All fields are present f
 | `load_curve_phase` | `str` | Diurnal phase: `ramp_up`, `peak`, `ramp_down`, or `idle` |
 | `sla_violation_streak` | `int` | Consecutive steps where any zone was outside [18, 27]°C |
 | `maintenance_active` | `bool` | True if any zone is in a maintenance window |
-| `maintenance_notes` | `list[str]` | Free-text maintenance notes |
+| `maintenance_notes` | `list[str]` | Free-text maintenance notes (also used for system feedback, e.g. "ACTION IGNORED: chiller already offline") |
 | `upcoming_events` | `list[str]` | Scenario-injected event forecasts |
-| `history` | `list[dict]` | Last 3 step snapshots (per-zone temps, fan speed, PUE) — oldest first |
+| `active_alerts` | `list[str]` | Environment-computed structured alerts at each step. Covers: chiller fault/offline, zone overheating/overcooling, sensor faults, near-boundary warnings, efficiency hints, SLA streaks. Agents should act on these before inspecting raw numeric fields |
+| `history` | `list[dict]` | Last 3 step snapshots (per-zone temps, fan speed, PUE) — oldest first. For sensor-faulty zones, records the drifted reading, consistent with the observation |
 
 ### Per-zone fields (`zones` array)
 
@@ -333,9 +341,9 @@ Each entry in `zones` is a `ZoneObservation`:
 | Field | Type | Description |
 |-------|------|-------------|
 | `zone_id` | `str` | Zone identifier (e.g. `zone_main`, `zone_ai_1`) |
-| `cold_aisle_temp_c` | `float` | **True** cold-aisle supply temperature (°C) — always accurate |
-| `hot_aisle_temp_c` | `float` | Return-air temperature from server exhausts (°C) |
-| `reported_temp_c` | `float` | Sensor-reported temperature — **may include drift/fault offset** (°C) |
+| `cold_aisle_temp_c` | `float` | Primary cold-aisle sensor reading (°C). For zones with `sensor_confidence < 0.7` this value **reflects the faulty sensor** and may be drifted up to +12°C above true temperature. Not ground truth for faulty zones |
+| `hot_aisle_temp_c` | `float` | Return-air temperature from server exhausts (°C). **Always accurate** — unaffected by sensor faults |
+| `reported_temp_c` | `float` | Secondary sensor reading (°C). Cross-checking `cold_aisle_temp_c` vs `reported_temp_c` plus hot-aisle physics can reveal sensor drift |
 | `supply_air_temp_c` | `float` | Actual delivered supply air temperature after chiller blending (°C) |
 | `supply_air_temp_setpoint_c` | `float` | Agent-controlled supply air temperature setpoint [16–26] (°C) |
 | `it_load_kw` | `float` | Current IT equipment power draw (kW) |
@@ -347,16 +355,18 @@ Each entry in `zones` is a `ZoneObservation`:
 | `zone_priority` | `int` | Static criticality: 0=LOW, 1=MEDIUM, 2=CRITICAL |
 | `load_forecast_next_hour` | `float` | Predicted IT load 60 min ahead (kW), computed from load curve |
 
-### Dynamic alerts (inference.py injection)
+### Active alerts (`active_alerts` field)
 
-`inference.py` computes additional real-time warnings via `_compute_alerts()` and injects them as an `alerts` list into the JSON prompt. These are **not** part of the `DCObservation` model — they are added only to the LLM's prompt context:
+`active_alerts` is a first-class field of `DCObservation`, computed by the environment at each step via `_compute_active_alerts()`. It is part of the observation spec and available to any client — not just `inference.py`.
 
-- Chiller fault / offline warnings
-- Zone over-temperature warnings with delta trend
-- Sensor fault warnings when `sensor_confidence < 0.4`
-- Carbon intensity warnings during high-carbon windows
-- SLA violation streak warnings
-- Efficiency nudge when a zone is stable but fans are unnecessarily high (≥70% when zone is safe and stable)
+Alert categories:
+- **Chiller**: `CRITICAL: Chiller is OFFLINE` (with explicit note that `chiller_active=true` is ignored) or `WARNING: Chiller is DEGRADING (COP=X.XX)`
+- **Zone violations**: `VIOLATION: zone_id OVERHEATING at X.X°C` or `OVERCOOLING`
+- **Near-boundary**: `WARNING: zone_id at X.X°C — within 1°C of limit`
+- **Sensor fault**: `SENSOR FAULT: zone_id sensor_confidence=0.XX — reading may be off by ~X.X°C`
+- **Carbon**: `CARBON CRITICAL (0.XX): Grid at peak emissions`
+- **SLA streak**: `SLA ALERT: N consecutive violation steps. Hard termination triggers at 10`
+- **Efficiency**: `EFFICIENCY: zone_id stable at X.X°C with fan at X% — reduce to 45–65%`
 
 ---
 
@@ -380,7 +390,7 @@ Submitted as a `DCAction` JSON object each step.
 | `chiller_active` | `bool` | — | true | Toggle chiller on/off |
 | `reasoning` | `str` | — | null | Agent's explanation; graded in hard task for coherence |
 
-**Rate limiting**: the simulation smooths abrupt consecutive changes to fan speed and setpoint. Very large single-step jumps are partially applied rather than fully accepted, reflecting real actuator dynamics.
+**Rate limiting**: the simulation smooths abrupt consecutive changes to fan speed and setpoint. Limits scale proportionally with `minutes_per_step` so they remain physically consistent across tasks — at 36 min/step (hard task) the effective limit is 7.2× the base value, allowing meaningful single-step changes that would take multiple steps at 5 min/step.
 
 **Omitting a zone** from `zone_adjustments` leaves its settings unchanged for that step.
 
@@ -423,7 +433,9 @@ R_step = clip(temp_reward + pue_reward + carbon_reward, -1, 1)
 
 ### Medium task (`grader_medium.py`)
 
-**Per-step reward weights**: temp=0.50, PUE=0.25, carbon=0.15, roughness=0.10
+**Per-step reward weights**: temp=0.45, PUE=0.25, carbon=0.15, roughness=0.10, sensor=0.05
+
+The sensor weight (0.05) provides a small per-step signal aligned with the final score's 20% sensor quality component. It is active from the moment a supply error is detectable for `zone_ai`.
 
 Priority multipliers on temperature reward: LOW=0.7×, MEDIUM=1.0×, CRITICAL=1.4×
 
@@ -449,7 +461,7 @@ Priority multipliers on temperature reward: LOW=0.7×, MEDIUM=1.0×, CRITICAL=1.
 
 **Recovery speed**: fraction of steps in the recovery window `[8, 16]` where all critical zones are in safe band `[18, 27]°C`.
 
-**Carbon efficiency**: fraction of high-carbon steps (steps where `carbon_intensity_normalized > 0.55`) where cooling power is below median. Only scored if the episode reaches high-carbon territory; defaults to 0.5 if the agent never encounters a high-carbon window.
+**Carbon efficiency**: normalised against a passive baseline of 70% average fan speed. Score = `(0.70 − avg_cooling_proxy) / (0.70 − 0.20)`, clamped to [0, 1]. A frozen agent running fans at ~70% scores 0.0; an agent that reduces cooling during high-carbon windows scores up to 1.0. Defaults to 0.5 if the episode ends before any high-carbon window is reached.
 
 **Reasoning coherence**: regex-scored against declared crisis actions. An agent saying "raising fans to protect critical zones" that actually lowers fans loses coherence points.
 
@@ -477,21 +489,23 @@ The system prompt (constant across all steps and tasks) teaches the agent:
 1. **MDP structure**: state fields, action fields, reward shaping goals.
 2. **Decision rules** (priority order): safety → efficiency → carbon.
 3. **Zone control rules**: when to go aggressive (temp > 27°C), when to back off (temp falling toward 18°C), thermal inertia awareness.
-4. **Sensor confidence rule**: `sensor_confidence < 0.5` means `reported_temp_c` is unreliable — use `cold_aisle_temp_c` instead.
-5. **Chiller failure protocol**: pre-cool on fault detection, triage after offline, do not attempt to re-enable during fault.
+4. **Sensor confidence rule**: `sensor_confidence < 0.7` → `cold_aisle_temp_c` may be drifted. Below 0.5, neither cold-aisle field is trustworthy — infer true thermal state from `hot_aisle_temp_c` (always accurate), `supply_air_temp_c`, and `it_load_kw`.
+5. **Chiller failure protocol**: check `chiller_fault_status` every step. On `"degrading"`: pre-cool immediately. On `"offline"`: triage with fans only; `chiller_active=true` is explicitly ignored by the environment (confirmed via `maintenance_notes`).
 6. **Triage rule**: zone priorities (2=CRITICAL, 1=MEDIUM, 0=LOW) and when to sacrifice low-priority zones.
 
 ### Per-step user message
 
 Each step, the agent receives:
 
-- Full current `DCObservation` as JSON
-- A dynamic `alerts` list (injected by `_compute_alerts()`) with real-time warnings
+- Full current `DCObservation` as JSON (including `active_alerts` and `chiller_fault_status`)
 - Enriched history entries tagged with events (e.g. `[CHILLER_FAULT]`, `[CHILLER_OFFLINE]`, `[VIOLATION:zone_id]`) for temporal context
 
-### Fallback mechanism (`_last_llm_result`)
+### Fallback mechanism
 
-If the LLM API call fails (network error, rate limit), the agent falls back to the last successful JSON action. This prevents the episode from stalling and ensures the environment always receives a valid action.
+If the LLM API call fails (network error, rate limit), the agent uses a two-tier fallback:
+
+1. **`_last_llm_result`** — if a prior LLM response exists, it is replayed as the action for this step.
+2. **`_safe_mode_action(obs)`** — if no prior LLM response exists, a conservative safe-mode action is generated: all zone fans at 85%, supply setpoint 18°C, chiller active only if `chiller_fault_status != "offline"`. This avoids the failure mode of attempting to re-enable a dead chiller.
 
 ### Daily token quota (TPD) handling
 
@@ -559,21 +573,21 @@ python inference.py
 
 ```python
 from server.environment import DCEnvironment
+from server.models import DCAction, ZoneAdjustment
 
 env = DCEnvironment(task="easy-single-zone")
-result = env.reset()
-obs = result.observation
+obs = env.reset()   # returns DCObservation directly
 
 # Build a DCAction and step
-from server.models import DCAction, ZoneAdjustment
 action = DCAction(
     zone_adjustments=[ZoneAdjustment(zone_id="zone_main", fan_speed_pct=70.0, supply_air_temp_setpoint_c=20.0)],
     chiller_setpoint_c=10.0,
     chiller_active=True,
     reasoning="Moderate cooling to recover from overheat"
 )
-step_result = env.step(action)
-print(step_result.reward, step_result.done)
+obs = env.step(action)   # returns DCObservation with .reward and .done set
+print(obs.reward, obs.done, obs.chiller_fault_status)
+print(obs.active_alerts)  # environment-computed alerts for this step
 ```
 
 ---
@@ -587,13 +601,13 @@ The physics engine always uses `SECONDS_PER_STEP = 300` (5 real minutes) for hea
 The easy scenario uses a constant IT load of 450 kW throughout. There is no diurnal variation. The full `_default_load_curve` is loaded but the scenario's single zone has a constant `base_it_load_kw`, so the curve has no practical effect. The challenge is purely thermal recovery and PUE optimisation.
 
 ### Sensor fault is one-directional
-The medium task's sensor fault only drifts upward (reports higher than true). A naive agent that trusts the sensor will over-cool. An agent that ignores all sensor readings entirely will also perform poorly. The intended signal is `sensor_confidence < 0.5` → cross-check against `cold_aisle_temp_c`.
+The medium task's sensor fault only drifts upward (reports higher than true). A naive agent that trusts the drifted `cold_aisle_temp_c` will over-cool. The intended recovery path is `sensor_confidence < 0.5` → cross-check against `hot_aisle_temp_c` and `supply_air_temp_c` to estimate the true thermal state.
 
 ### Chiller cannot be re-enabled mid-episode (hard task)
 Once `chiller_fault_step` triggers and the chiller goes offline, setting `chiller_active: true` in the action has no effect — the simulation ignores it. The agent must survive on fans and free cooling alone from step 8 onward. The system prompt warns the agent of this, but LLMs that ignore the protocol may waste steps attempting to re-enable the chiller.
 
 ### LLM thermal inertia blindspot
-Zero-shot LLMs often react too late to temperature trends. The environment's `boundary_margin` reward component and the system prompt's thermal inertia guidance both try to mitigate this. The `_compute_alerts()` efficiency nudge also pushes back when fans are high on an already-cool zone. These are heuristic measures; a well-fine-tuned agent would outperform a zero-shot one significantly.
+Zero-shot LLMs often react too late to temperature trends. The environment's `boundary_margin` reward component and the system prompt's thermal inertia guidance both try to mitigate this. The `active_alerts` efficiency nudge also pushes back when fans are high on an already-cool zone. These are heuristic measures; a well-fine-tuned agent would outperform a zero-shot one significantly.
 
 ### Success thresholds
 Per-task success thresholds are calibrated to each difficulty:
