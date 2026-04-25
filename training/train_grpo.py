@@ -55,8 +55,8 @@ LORA_TARGET_MODS  = [
     "gate_proj", "up_proj", "down_proj",
 ]
 
-N_ITERATIONS      = 30        # trial 1: check convergence fast; bump to 50 if curve trends up
-G_EPISODES        = 4         # rollouts per iteration (group size for GRPO)
+N_ITERATIONS      = 60        # L4 (24GB): 60 iters at ~2.5 hrs total
+G_EPISODES        = 4         # L4 has 24GB — safe to use full group size (32 samples/iter)
 LEARNING_RATE     = 1e-5
 GRAD_CLIP         = 1.0
 TEMPERATURE       = 0.7
