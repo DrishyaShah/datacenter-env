@@ -140,9 +140,14 @@ def collect_rollouts(
     PPOCoolingController is loaded once and shared across all episodes
     to save memory and startup time.
     """
-    from server.agents.ppo_cooling_controller import PPOCoolingController
-
-    ctrl = PPOCoolingController()
+    try:
+        from server.agents.ppo_cooling_controller import PPOCoolingController
+        ctrl = PPOCoolingController()
+        print("Cooling: PPO pretrained controller loaded.")
+    except Exception as e:
+        from server.agents.cooling_heuristic import CoolingHeuristic
+        ctrl = CoolingHeuristic()
+        print(f"Cooling: PPO model not found ({e}), falling back to CoolingHeuristic.")
     rollouts: list[dict] = []
 
     for ep in range(n_episodes):
