@@ -1,0 +1,11 @@
+# Core environment
+numpy
+dataclasses-json
+
+# PPO cooling controller
+stable-baselines3
+gymnasium
+
+# GRPO training
+unsloth
+torch
