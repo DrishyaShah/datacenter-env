@@ -12,9 +12,9 @@ grader_input keys (provided by environment._build_grader_input):
   chiller_active, chiller_setpoint_c, sla_violation_streak,
   action, last_action, action_clipped, reasoning
 
-Scoring criteria (deterministic, reproducible, 0.0–1.0):
-  60% — fraction of steps where cold_aisle_temp ∈ [18, 27] °C
-  40% — average PUE improvement vs pid_baseline_pue (NOT vs zero-cooling)
+Scoring criteria (deterministic, reproducible, 0.0-1.0):
+  60% -- fraction of steps where cold_aisle_temp  [18, 27] C
+  40% -- average PUE improvement vs pid_baseline_pue (NOT vs zero-cooling)
 """
 
 from typing import Any, Dict, List, Tuple
@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Tuple
 from ..models import DCReward
 
 
-# ── Constants ──────────────────────────────────────────────────────────────────
+# -- Constants ------------------------------------------------------------------
 
 TEMP_MIN   = 18.0
 TEMP_MAX   = 27.0
@@ -35,7 +35,7 @@ TEMP_IDEAL = 22.0
 IDEAL_PUE = 1.18
 
 
-# ── Grader class ───────────────────────────────────────────────────────────────
+# -- Grader class ---------------------------------------------------------------
 
 class EasyGraderState:
     """
@@ -52,7 +52,7 @@ class EasyGraderState:
         self.temp_readings:    List[float] = []
         self.consecutive_safe: int         = 0
 
-    # ── Step interface (called by environment.step()) ──────────────────────────
+    # -- Step interface (called by environment.step()) --------------------------
 
     def step(self, grader_input: Dict[str, Any]) -> Tuple[float, DCReward]:
         """
@@ -66,7 +66,7 @@ class EasyGraderState:
         current_pue      = grader_input["current_pue"]
         pid_baseline_pue = grader_input.get("pid_baseline_pue", 1.55)
         self._pid_baseline_pue = pid_baseline_pue
-        # Easy task: always single zone — take first zone
+        # Easy task: always single zone -- take first zone
         zones = grader_input["zones"]
         zone  = zones[0] if zones else {}
 
@@ -76,7 +76,7 @@ class EasyGraderState:
         self.pue_readings.append(current_pue)
         self.temp_readings.append(zone_temp)
 
-        # ── Temperature reward ─────────────────────────────────────────────────
+        # -- Temperature reward -------------------------------------------------
         in_range = TEMP_MIN <= zone_temp <= TEMP_MAX
 
         if in_range:
@@ -84,9 +84,9 @@ class EasyGraderState:
             self.consecutive_safe = consecutive_safe
             # Closeness to ideal midpoint
             closeness          = 1.0 - abs(zone_temp - TEMP_IDEAL) / 5.0
-            # Distance from the nearest safe-band wall (0–4.5 °C), saturates at 3 °C buffer.
-            # This creates a strong gradient away from 26–27 °C so the LLM keeps cooling
-            # rather than declaring victory the moment it crosses 27 °C from above.
+            # Distance from the nearest safe-band wall (0-4.5 C), saturates at 3 C buffer.
+            # This creates a strong gradient away from 26-27 C so the LLM keeps cooling
+            # rather than declaring victory the moment it crosses 27 C from above.
             dist_from_boundary = min(zone_temp - TEMP_MIN, TEMP_MAX - zone_temp)
             boundary_margin    = min(dist_from_boundary / 3.0, 1.0)
             temp_reward        = 0.30 + 0.10 * closeness + 0.15 * boundary_margin
@@ -100,21 +100,21 @@ class EasyGraderState:
             violation   = overshoot + undershoot
             temp_reward = -0.30 * min(violation / 3.0, 1.0)
 
-        # ── PUE reward (vs PID baseline, not vs zero-cooling) ─────────────────
+        # -- PUE reward (vs PID baseline, not vs zero-cooling) -----------------
         # Suppressed while zone is out of range: don't penalise necessary aggressive cooling.
         pue_range  = max(pid_baseline_pue - IDEAL_PUE, 0.01)   # avoid div/0
         pue_vs_pid = (pid_baseline_pue - current_pue) / pue_range
         pue_vs_pid = max(-1.0, min(1.0, pue_vs_pid))
         pue_reward = 0.35 * pue_vs_pid if in_range else 0.0
 
-        # ── Carbon signal (light penalty, easy task doesn't heavily weight it) ─
+        # -- Carbon signal (light penalty, easy task doesn't heavily weight it) -
         carbon = grader_input.get("carbon_intensity_normalized", 0.5)
         # Approximate cooling power from PUE and IT load
         total_it_kw = sum(z.get("it_load_kw", 0.0) for z in zones)
         cooling_power_est = max(0.0, (current_pue - 1.0) * total_it_kw)
         carbon_reward = -0.05 * (cooling_power_est / max(total_it_kw, 1.0)) * carbon
 
-        # ── Total ──────────────────────────────────────────────────────────────
+        # -- Total --------------------------------------------------------------
         total = round(
             max(-1.0, min(1.0, temp_reward + pue_reward + carbon_reward)), 4
         )
@@ -144,14 +144,14 @@ class EasyGraderState:
 
         return total, reward_detail
 
-    # ── Final score (called by inference.py after episode ends) ───────────────
+    # -- Final score (called by inference.py after episode ends) ---------------
 
     def final_score(self) -> float:
         """
         Final episode score in [0.0, 1.0].
 
-        60% — temperature compliance fraction
-        40% — average PUE improvement vs pid_baseline_pue
+        60% -- temperature compliance fraction
+        40% -- average PUE improvement vs pid_baseline_pue
         """
         if self.steps_total == 0:
             return 0.0

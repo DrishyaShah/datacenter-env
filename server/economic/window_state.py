@@ -1,9 +1,9 @@
 """
-Economic layer — Per-window operator observation, team history, oversight flags,
+Economic layer -- Per-window operator observation, team history, oversight flags,
 and full-episode ledger.
 
 WindowState is what the scheduler sees at the start of each negotiation window.
-EpisodeLedger is the environment's internal accounting — never shown to the LLM.
+EpisodeLedger is the environment's internal accounting -- never shown to the LLM.
 """
 
 from __future__ import annotations
@@ -14,13 +14,13 @@ import math
 from .job_request import JobRequest
 
 
-# ── TeamHistory ───────────────────────────────────────────────────────────────
+# -- TeamHistory ---------------------------------------------------------------
 
 @dataclass
 class TeamHistory:
     """
     Per-team behavioural statistics accumulated across windows.
-    Visible to the scheduler in the prompt — the primary signal for
+    Visible to the scheduler in the prompt -- the primary signal for
     detecting gaming patterns without having access to private fields.
 
     Updated by ClusterEnvironment after each window resolves, once
@@ -30,13 +30,13 @@ class TeamHistory:
 
     team_id: str
 
-    # ── Submission volume ─────────────────────────────────────────────────────
+    # -- Submission volume -----------------------------------------------------
     total_submitted: int = 0
     total_accepted:  int = 0
     total_deferred:  int = 0
     total_rejected:  int = 0
 
-    # ── Gaming detection rates (updated post-hoc) ─────────────────────────────
+    # -- Gaming detection rates (updated post-hoc) -----------------------------
     priority_inflation_rate: float = 0.0
     # Fraction of submissions where stated_priority > true_priority.
     # 0.0 = always honest; 0.87 = 87% of claims were inflated.
@@ -44,21 +44,21 @@ class TeamHistory:
 
     deadline_compression_rate: float = 0.0
     # Fraction of "urgent" / tight stated_deadlines where the true_deadline_window
-    # had slack ≥ 2 windows.
+    # had slack  2 windows.
 
     carbon_gaming_rate: float = 0.0
     # Fraction of stated_carbon_flexible=False claims where true_carbon_flexible=True.
 
-    # ── Completion performance ────────────────────────────────────────────────
+    # -- Completion performance ------------------------------------------------
     jobs_completed_on_time: int = 0     # completed before true_deadline_window
     jobs_completed_late:    int = 0     # completed after true_deadline_window
     jobs_missed:            int = 0     # deadline passed without execution
 
-    # ── Oversight history ─────────────────────────────────────────────────────
+    # -- Oversight history -----------------------------------------------------
     oversight_flags_received: int = 0
     last_flag_window:         int = -1  # -1 = never flagged
 
-    # ── Derived properties ────────────────────────────────────────────────────
+    # -- Derived properties ----------------------------------------------------
 
     @property
     def acceptance_rate(self) -> float:
@@ -75,7 +75,7 @@ class TeamHistory:
 
     @property
     def is_flagged_as_gaming(self) -> bool:
-        """True if any gaming rate exceeds 50% — strong signal."""
+        """True if any gaming rate exceeds 50% -- strong signal."""
         return (
             self.priority_inflation_rate > 0.50
             or self.deadline_compression_rate > 0.50
@@ -94,7 +94,7 @@ class TeamHistory:
         )
 
 
-# ── OversightFlag ─────────────────────────────────────────────────────────────
+# -- OversightFlag -------------------------------------------------------------
 
 @dataclass
 class OversightFlag:
@@ -104,41 +104,41 @@ class OversightFlag:
     Injected into the NEXT window's WindowState.oversight_flags so the scheduler
     can incorporate it into admission decisions.
 
-    Post-hoc only — the OversightAgent has no real-time veto authority.
+    Post-hoc only -- the OversightAgent has no real-time veto authority.
     Delayed by one window to maintain clean MDP structure.
     """
 
     team_id: str
 
     flag_type: str
-    # "priority_inflation"   — stated_priority > true_priority
-    # "deadline_compression" — stated urgency inconsistent with true_deadline_window
-    # "carbon_gaming"        — stated_carbon_flexible=False when true=True
-    # "pattern_gaming"       — persistent multi-window combination of the above
+    # "priority_inflation"   -- stated_priority > true_priority
+    # "deadline_compression" -- stated urgency inconsistent with true_deadline_window
+    # "carbon_gaming"        -- stated_carbon_flexible=False when true=True
+    # "pattern_gaming"       -- persistent multi-window combination of the above
 
     evidence: str
     # Natural language explanation fed directly into the operator prompt.
     # Should be specific and citable: e.g.
     # "Team B claimed CRITICAL on 5/6 recent jobs; 4 completed 3+ hours after
-    #  stated deadline with no consequences — true priority appears LOW/MEDIUM."
+    #  stated deadline with no consequences -- true priority appears LOW/MEDIUM."
 
     severity: str
-    # "warning"   — isolated incident, monitor
-    # "flag"      — repeated pattern, recommend conservative admission
-    # "escalate"  — systematic gaming, recommend reject until pattern breaks
+    # "warning"   -- isolated incident, monitor
+    # "flag"      -- repeated pattern, recommend conservative admission
+    # "escalate"  -- systematic gaming, recommend reject until pattern breaks
 
-    confidence: float           # 0.0–1.0
+    confidence: float           # 0.0-1.0
     window_detected: int        # window index when this flag was generated
 
     def prompt_str(self) -> str:
         """Formatted string for the operator prompt oversight section."""
         return (
-            f"[{self.severity.upper()}] {self.team_id}: {self.flag_type} — "
+            f"[{self.severity.upper()}] {self.team_id}: {self.flag_type} -- "
             f"{self.evidence} (confidence: {self.confidence:.0%})"
         )
 
 
-# ── WindowState ───────────────────────────────────────────────────────────────
+# -- WindowState ---------------------------------------------------------------
 
 @dataclass
 class WindowState:
@@ -150,37 +150,37 @@ class WindowState:
 
     All fields here are PUBLIC (visible to the scheduler).
     Private fields (true_priority, true_deadline_window, etc.) are
-    never present in WindowState — they remain in EpisodeLedger only.
+    never present in WindowState -- they remain in EpisodeLedger only.
     """
 
-    # ── Episode position ──────────────────────────────────────────────────────
-    window_idx:    int          # 0–7 (current window)
+    # -- Episode position ------------------------------------------------------
+    window_idx:    int          # 0-7 (current window)
     total_windows: int = 8
     sim_timestamp: str = "08:00"
     # Simulated wall-clock time at window start.
     # Window 0 = "08:00", window 1 = "09:30", ..., window 7 = "18:30"
 
-    # ── Grid signals ──────────────────────────────────────────────────────────
+    # -- Grid signals ----------------------------------------------------------
     carbon_intensity: str = "medium"
     # Current window: "low" | "medium" | "high" | "critical"
 
     carbon_forecast: list[str] = field(default_factory=list)
     # Intensity for the next 3 windows (window_idx+1 through window_idx+3).
-    # e.g. ["high", "high", "low"] — key signal for carbon-aware deferral.
+    # e.g. ["high", "high", "low"] -- key signal for carbon-aware deferral.
     # Empty list if fewer than 3 windows remain.
 
-    # ── Physical state (coarse summary — operator does not see raw temperatures) ──
+    # -- Physical state (coarse summary -- operator does not see raw temperatures) --
     thermal_summary: dict[str, str] = field(default_factory=dict)
-    # zone_id → "green" | "yellow" | "red"
-    # green:  zone_temp < 23°C  — comfortable, capacity available
-    # yellow: 23°C ≤ temp < 25°C — warming, admit cautiously
-    # red:    temp ≥ 25°C        — near-limit, avoid adding load to this zone
+    # zone_id -> "green" | "yellow" | "red"
+    # green:  zone_temp < 23C  -- comfortable, capacity available
+    # yellow: 23C  temp < 25C -- warming, admit cautiously
+    # red:    temp  25C        -- near-limit, avoid adding load to this zone
 
     capacity_headroom_kw: float = 0.0
     # Total facility power budget minus currently admitted running load (kW).
     # Admitting a job reduces this by job.estimated_kw for job.estimated_duration_hours.
 
-    # ── Job queues ────────────────────────────────────────────────────────────
+    # -- Job queues ------------------------------------------------------------
     pending_requests: list[JobRequest] = field(default_factory=list)
     # New job submissions from teams arriving this window.
     # Scheduler must decide ACCEPT / DEFER / REJECT for each.
@@ -188,22 +188,22 @@ class WindowState:
     deferred_requests: list[JobRequest] = field(default_factory=list)
     # Jobs from previous windows that were deferred to this window or earlier
     # and have not yet been admitted.
-    # Scheduler must decide again — ACCEPT, DEFER further, or REJECT.
+    # Scheduler must decide again -- ACCEPT, DEFER further, or REJECT.
 
-    # ── Team context ──────────────────────────────────────────────────────────
+    # -- Team context ----------------------------------------------------------
     team_history: dict[str, TeamHistory] = field(default_factory=dict)
-    # team_id → TeamHistory (accumulated stats visible to scheduler)
+    # team_id -> TeamHistory (accumulated stats visible to scheduler)
 
     team_budgets_remaining: dict[str, float] = field(default_factory=dict)
-    # team_id → GPU-hour equivalents remaining in episode budget.
+    # team_id -> GPU-hour equivalents remaining in episode budget.
     # Computed by ChargebackLedger.snapshot().
 
-    # ── Oversight signals (from previous window's oversight run) ──────────────
+    # -- Oversight signals (from previous window's oversight run) --------------
     oversight_flags: list[OversightFlag] = field(default_factory=list)
     # Flags detected in window (window_idx - 1); empty for window 0.
     # Scheduler should factor these into admission decisions.
 
-    # ── Derived helpers (not serialised to prompt directly) ───────────────────
+    # -- Derived helpers (not serialised to prompt directly) -------------------
 
     @property
     def all_pending(self) -> list[JobRequest]:
@@ -247,7 +247,7 @@ class WindowState:
         return remaining < (TEAM_BUDGET_PER_EPISODE * 0.25)
 
 
-# ── EpisodeLedger ─────────────────────────────────────────────────────────────
+# -- EpisodeLedger -------------------------------------------------------------
 
 @dataclass
 class ActiveJob:
@@ -288,26 +288,26 @@ class EpisodeLedger:
     Tracks all job state transitions, per-zone IT loads, and
     window-level metrics needed for reward computation.
 
-    NEVER exposed to the LLM or scheduler — internal only.
+    NEVER exposed to the LLM or scheduler -- internal only.
     """
 
-    # ── Active jobs ───────────────────────────────────────────────────────────
+    # -- Active jobs -----------------------------------------------------------
     active_jobs: list[ActiveJob] = field(default_factory=list)
     # Jobs currently running (contributing IT load to their zone).
 
-    # ── Pending deferred jobs ─────────────────────────────────────────────────
+    # -- Pending deferred jobs -------------------------------------------------
     deferred_queue: list[tuple[int, JobRequest]] = field(default_factory=list)
     # (scheduled_window, JobRequest) pairs waiting for their target window.
     # Each window start, ClusterEnvironment moves eligible entries to pending_requests.
 
-    # ── Completed and missed records ──────────────────────────────────────────
+    # -- Completed and missed records ------------------------------------------
     completed_jobs: list[CompletedJob] = field(default_factory=list)
     missed_jobs:    list[JobRequest]   = field(default_factory=list)
     # Missed = deadline passed without the job ever being admitted.
 
-    # ── Window-level metrics (one entry appended per window) ──────────────────
+    # -- Window-level metrics (one entry appended per window) ------------------
     window_thermal_incidents: list[bool]  = field(default_factory=list)
-    # True if any zone exceeded 27°C during that window's physical steps.
+    # True if any zone exceeded 27C during that window's physical steps.
 
     window_rewards:     list[float] = field(default_factory=list)
     window_throughput:  list[float] = field(default_factory=list)
@@ -316,7 +316,7 @@ class EpisodeLedger:
     window_carbon_deferrals: list[int] = field(default_factory=list)
     # Count of jobs that ran in a low-carbon window after being explicitly deferred.
 
-    # ── IT load helpers ───────────────────────────────────────────────────────
+    # -- IT load helpers -------------------------------------------------------
 
     def active_load_kw(self, zone_id: str) -> float:
         """Total IT kW from currently running jobs in the given zone."""
@@ -333,7 +333,7 @@ class EpisodeLedger:
     def zone_ids_with_load(self) -> list[str]:
         return list({j.zone_id for j in self.active_jobs})
 
-    # ── Job lifecycle ─────────────────────────────────────────────────────────
+    # -- Job lifecycle ---------------------------------------------------------
 
     def expire_finished_jobs(
         self,
@@ -341,7 +341,7 @@ class EpisodeLedger:
         carbon_intensity: str,
     ) -> list[ActiveJob]:
         """
-        Remove jobs whose expected_end_window ≤ current_window.
+        Remove jobs whose expected_end_window  current_window.
         Appends a CompletedJob record for each expired job.
         Returns the list of expired ActiveJobs (for caller logging).
         """
@@ -399,7 +399,7 @@ class EpisodeLedger:
         self.deferred_queue = remaining
         return missed
 
-    # ── Episode-level summary metrics ─────────────────────────────────────────
+    # -- Episode-level summary metrics -----------------------------------------
 
     def incident_rate(self) -> float:
         """Fraction of windows with at least one thermal incident."""

@@ -1,5 +1,5 @@
 """
-inference.py — DC-OpenEnv Baseline Inference Script
+inference.py -- DC-OpenEnv Baseline Inference Script
 ====================================================
 Runs the datacenter cooling environment against an LLM via an OpenAI-compatible API.
 
@@ -10,7 +10,7 @@ Environment variables:
     INFERENCE_MAX_STEPS_PER_TASK Optional cap per task (int) to stay under time limits
     VERBOSE                      If "1", print non-protocol [INFO]/[SCORE] lines
 
-Stdout (hackathon protocol — reward/score/rewards use 2 decimal places):
+Stdout (hackathon protocol -- reward/score/rewards use 2 decimal places):
     [START] task=<task> env=dc-openenv model=<model>
     [STEP]  step=<n> action=<json> reward=<0.00> done=<true|false> error=<str|null>
     [END]   success=<true|false> steps=<n> score=<0.00> rewards=<csv>
@@ -31,7 +31,7 @@ from server.environment import DCEnvironment
 from server.models import DCAction, DCObservation, ZoneAdjustment
 
 
-# ── Tee: dual-output logger ───────────────────────────────────────────────────
+# -- Tee: dual-output logger ---------------------------------------------------
 
 class Tee:
     """Write to multiple file objects simultaneously (stdout + log file)."""
@@ -48,7 +48,7 @@ class Tee:
             f.flush()
 
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# -- Config ---------------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.groq.com/openai/v1")
 MODEL_NAME   = os.getenv("MODEL_NAME",   "llama-3.3-70b-versatile")
 HF_TOKEN     = os.getenv("HF_TOKEN")
@@ -60,10 +60,10 @@ INFERENCE_MAX_STEPS_PER_TASK: Optional[int] = (
     int(_steps_cap_raw) if _steps_cap_raw.isdigit() else None
 )
 
-# OpenAI client — initialised in main() after key validation
+# OpenAI client -- initialised in main() after key validation
 client: Optional[OpenAI] = None
 
-# Safe-band bounds — used for history event tagging
+# Safe-band bounds -- used for history event tagging
 TEMP_MAX = 27.0
 TEMP_MIN = 18.0
 
@@ -76,39 +76,39 @@ SUCCESS_THRESHOLDS = {
     "hard-cascading-failure": 0.40,
 }
 
-# ── Rate-limit / retry config ─────────────────────────────────────────────────
-STEP_SLEEP_SECONDS   = 0            # no inter-step sleep — stay well under 20-min cap
+# -- Rate-limit / retry config -------------------------------------------------
+STEP_SLEEP_SECONDS   = 0            # no inter-step sleep -- stay well under 20-min cap
 LLM_MAX_RETRIES      = 3            # attempts before falling back to held settings
-LLM_RETRY_BASE_SLEEP = 2.0         # seconds; doubles on each retry (2 → 4 → 8 = 14s max)
-                                    # was 5.0 (5→10→20 = 35s max) which caused >20 min runs
+LLM_RETRY_BASE_SLEEP = 2.0         # seconds; doubles on each retry (2 -> 4 -> 8 = 14s max)
+                                    # was 5.0 (5->10->20 = 35s max) which caused >20 min runs
 
-# ── Global wall-clock budget ──────────────────────────────────────────────────
+# -- Global wall-clock budget --------------------------------------------------
 # Hard cap: stop starting new tasks if we are within GLOBAL_TIMEOUT_BUFFER seconds
 # of the GLOBAL_TIMEOUT_SECONDS deadline.  Evaluator hard-kills at 20 minutes.
-GLOBAL_TIMEOUT_SECONDS = 18 * 60   # 18 minutes — 2-min safety margin
+GLOBAL_TIMEOUT_SECONDS = 18 * 60   # 18 minutes -- 2-min safety margin
 GLOBAL_TIMEOUT_BUFFER  = 90        # seconds: don't start a task that can't finish
 _SCRIPT_START: float = 0.0         # populated in main() via time.time()
 
-# ── Task registry (all three tasks run against DCEnvironment + graders) ───────
+# -- Task registry (all three tasks run against DCEnvironment + graders) -------
 TASKS = [
     {
         "name": "easy-single-zone",
         "description": "Single-zone thermal runaway recovery under steady load",
-        "max_steps": 20,   # 20 steps × 12 min/step = 4 hr (full arc)
+        "max_steps": 20,   # 20 steps x 12 min/step = 4 hr (full arc)
     },
     {
         "name": "medium-multi-zone",
         "description": "Multi-zone load surge with faulty sensor and diurnal variation",
-        "max_steps": 30,   # 30 steps × 24 min/step = 12 hr (full 06:00–18:00 arc)
+        "max_steps": 30,   # 30 steps x 24 min/step = 12 hr (full 06:00-18:00 arc)
     },
     {
         "name": "hard-cascading-failure",
         "description": "Cascading chiller failure with carbon-aware triage",
-        "max_steps": 40,   # 40 steps × 36 min/step = 24 hr (full arc)
+        "max_steps": 40,   # 40 steps x 36 min/step = 24 hr (full arc)
     },
 ]
 
-# ── System prompt ──────────────────────────────────────────────────────────────
+# -- System prompt --------------------------------------------------------------
 SYSTEM_PROMPT = textwrap.dedent("""
     You are a data centre operations engineer AI managing server room cooling.
 
@@ -118,17 +118,17 @@ SYSTEM_PROMPT = textwrap.dedent("""
     Action: per-zone fan_speed_pct [0-100] + supply_air_temp_setpoint_c [16-26],
             chiller_setpoint_c [6-15], chiller_active bool.
     Reward: shaped by temperature compliance, PUE vs baseline, carbon cost, smoothness.
-    Goal  : keep ALL zones in [18-27 °C], minimise PUE, prefer low-carbon cooling.
+    Goal  : keep ALL zones in [18-27 C], minimise PUE, prefer low-carbon cooling.
 
     === DECISION RULES (priority order) ===
-    1. SAFETY FIRST — all zones must stay in [18, 27] °C at every step.
-    2. EFFICIENCY — lower PUE is better; avoid high fans when the zone is already safe.
-    3. CARBON — prefer lower fan speeds during high-carbon grid windows.
+    1. SAFETY FIRST -- all zones must stay in [18, 27] C at every step.
+    2. EFFICIENCY -- lower PUE is better; avoid high fans when the zone is already safe.
+    3. CARBON -- prefer lower fan speeds during high-carbon grid windows.
 
     At each step you receive the current data centre state as JSON.
     The "zones" array lists each zone with its zone_id and all sensor readings.
 
-    You MUST respond with ONLY a valid JSON object — no markdown, no text outside JSON:
+    You MUST respond with ONLY a valid JSON object -- no markdown, no text outside JSON:
     {
       "zone_adjustments": [
         {
@@ -143,30 +143,30 @@ SYSTEM_PROMPT = textwrap.dedent("""
     }
 
     === ZONE CONTROL RULES ===
-    - Copy EXACT zone_id strings from the observation — never invent zone names.
+    - Copy EXACT zone_id strings from the observation -- never invent zone names.
     - Include ALL zones from the observation in zone_adjustments every step.
-    - cold_aisle_temp_c ABOVE 27 °C → fan high (80-100), supply setpoint low (16-18).
-    - cold_aisle_temp_c BELOW 18 °C → you are OVERCOOLING (same severity as overheating).
+    - cold_aisle_temp_c ABOVE 27 C -> fan high (80-100), supply setpoint low (16-18).
+    - cold_aisle_temp_c BELOW 18 C -> you are OVERCOOLING (same severity as overheating).
       Immediately raise supply_air_temp_setpoint_c by 2, reduce fan_speed_pct by 15-20.
-    - cold_aisle_temp_c between 19-23 °C AND falling for 2+ steps → back off NOW.
-      Set fan=45-55, supply=21-22 to avoid drifting below 18 °C.
+    - cold_aisle_temp_c between 19-23 C AND falling for 2+ steps -> back off NOW.
+      Set fan=45-55, supply=21-22 to avoid drifting below 18 C.
     - Thermal inertia: the zone keeps cooling for 2-3 steps after you reduce fans.
-      Back off BEFORE the zone hits 18 °C, not after.
-    - Overheating recovery: aggressive cooling (fan=85-95) only while temp > 24 °C.
-      Switch to moderate (fan=55-70) once temp drops below 24 °C.
-    - Zone in safe range [18-27] → moderate fan (40-65), supply near 20-22 to save energy.
+      Back off BEFORE the zone hits 18 C, not after.
+    - Overheating recovery: aggressive cooling (fan=85-95) only while temp > 24 C.
+      Switch to moderate (fan=55-70) once temp drops below 24 C.
+    - Zone in safe range [18-27] -> moderate fan (40-65), supply near 20-22 to save energy.
 
     === SENSOR CONFIDENCE RULE ===
     - Each zone has a sensor_confidence field [0.0-1.0].
     - If sensor_confidence < 0.7, the cold_aisle_temp_c sensor may be DRIFTED.
-      The reported value could be up to 12 °C above the true temperature.
+      The reported value could be up to 12 C above the true temperature.
     - When sensor_confidence < 0.5, DO NOT trust cold_aisle_temp_c or reported_temp_c.
       Instead infer the true thermal state from:
-        * hot_aisle_temp_c   (exhaust air — always accurate, reflects real IT heat)
-        * supply_air_temp_c  (delivered air temperature — accurate)
-        * it_load_kw         (actual IT power draw — accurate)
-      A physics check: true_cold_aisle ≈ hot_aisle − it_load / (mass_flow × 1.006)
-      If hot_aisle is below 32 °C and load is moderate, the zone is likely fine.
+        * hot_aisle_temp_c   (exhaust air -- always accurate, reflects real IT heat)
+        * supply_air_temp_c  (delivered air temperature -- accurate)
+        * it_load_kw         (actual IT power draw -- accurate)
+      A physics check: true_cold_aisle  hot_aisle  it_load / (mass_flow x 1.006)
+      If hot_aisle is below 32 C and load is moderate, the zone is likely fine.
     - Never set max fans based solely on a high cold_aisle_temp_c when sensor_confidence < 0.5.
 
     === CHILLER FAILURE PROTOCOL (HIGHEST PRIORITY AFTER SAFETY) ===
@@ -174,28 +174,28 @@ SYSTEM_PROMPT = textwrap.dedent("""
 
     chiller_fault_status = "degrading":
       - COP is dropping. You have 3-8 steps before the chiller goes fully offline.
-      - IMMEDIATELY: set ALL zone fans to 80-90%, supply setpoints to 18-19 °C.
-      - Pre-cool now — do NOT wait for temperatures to rise.
-      - Keep chiller_active: true — degraded COP still helps.
-      - Do NOT raise chiller_setpoint_c above 10 — keep the water cold.
+      - IMMEDIATELY: set ALL zone fans to 80-90%, supply setpoints to 18-19 C.
+      - Pre-cool now -- do NOT wait for temperatures to rise.
+      - Keep chiller_active: true -- degraded COP still helps.
+      - Do NOT raise chiller_setpoint_c above 10 -- keep the water cold.
 
     chiller_fault_status = "offline":
       - Fans are your ONLY cooling. Chiller provides ZERO cooling capacity.
       - Setting chiller_active: true in your action is IGNORED (you will see a
         maintenance_note confirming this).
-      - Set CRITICAL zones (zone_priority=2) to fan=90-100%, supply=16-18 °C.
-      - Accept LOW-priority zones (zone_priority=0) drifting to 26-27 °C to
+      - Set CRITICAL zones (zone_priority=2) to fan=90-100%, supply=16-18 C.
+      - Accept LOW-priority zones (zone_priority=0) drifting to 26-27 C to
         concentrate remaining cooling on CRITICAL zones.
-      - Carbon cost is irrelevant during a chiller failure — survival first.
+      - Carbon cost is irrelevant during a chiller failure -- survival first.
 
     "[CHILLER_FAULT]" / "[CHILLER_OFFLINE]" tags in step history:
       - Failure has been ongoing. Count how many steps OFFLINE.
       - After 3+ OFFLINE steps: assume CRITICAL zones need sustained max cooling.
-      - Scale back fans only once temperatures are stably below 24 °C.
+      - Scale back fans only once temperatures are stably below 24 C.
 
     === CHILLER RULES ===
     - Keep chiller_active true unless you have a specific reason to disable it.
-    - chiller_setpoint_c MUST be between 6.0 and 15.0 — never go above 15.
+    - chiller_setpoint_c MUST be between 6.0 and 15.0 -- never go above 15.
       Values above 15 will be silently clamped to 15.
     - A reasonable default is chiller_setpoint_c = 10.0 for most situations.
     - Lower chiller_setpoint_c (e.g. 8.0) = colder water = more cooling power but
@@ -210,14 +210,14 @@ SYSTEM_PROMPT = textwrap.dedent("""
       temporarily if doing so keeps CRITICAL zones safe.
 
     === RATE LIMITS (physics constraint) ===
-    - Fan speed can only change ±20 % per step.
-    - Supply air setpoint can only change ±2 °C per step.
-    - Chiller setpoint can only change ±1 °C per step.
-    - Plan ahead — you cannot jump from fan=40 to fan=100 in one step.
+    - Fan speed can only change 20 % per step.
+    - Supply air setpoint can only change 2 C per step.
+    - Chiller setpoint can only change 1 C per step.
+    - Plan ahead -- you cannot jump from fan=40 to fan=100 in one step.
 """).strip()
 
 
-# ── Logging helpers (2 decimal places per hackathon sample) ──────────────────
+# -- Logging helpers (2 decimal places per hackathon sample) ------------------
 _logged_steps: set = set()
 
 
@@ -255,14 +255,14 @@ def _vprint(*args, **kwargs) -> None:
 
 
 
-# ── LLM call with retry on 429 ────────────────────────────────────────────────
+# -- LLM call with retry on 429 ------------------------------------------------
 def get_llm_action(obs_dict: dict, step: int, history: List[str]) -> dict:
     history_block = "\n".join(history[-4:]) if history else "None"
     user_prompt = textwrap.dedent(f"""
-        Step {step} — Current Data Centre State:
+        Step {step} -- Current Data Centre State:
         {json.dumps(obs_dict, indent=2)}
 
-        Recent history (oldest → newest):
+        Recent history (oldest -> newest):
         {history_block}
 
         Respond with your JSON action. Use the exact zone_id values shown above.
@@ -300,28 +300,28 @@ def get_llm_action(obs_dict: dict, step: int, history: List[str]) -> dict:
         except RateLimitError as e:
             last_exc = e
             err_msg = str(e).lower()
-            # "tokens per day" quota is exhausted for today — retrying will never help.
+            # "tokens per day" quota is exhausted for today -- retrying will never help.
             # Skip all remaining attempts and let the caller use the last intended fallback.
             if "per day" in err_msg or "tokens per day" in err_msg or "tpd" in err_msg:
                 _vprint(
                     f"[WARN] Daily token quota exhausted at step {step} "
-                    "— skipping retries, using fallback action"
+                    "-- skipping retries, using fallback action"
                 )
                 return {}
-            # Normal per-minute rate limit — exponential backoff and retry
+            # Normal per-minute rate limit -- exponential backoff and retry
             sleep_for = LLM_RETRY_BASE_SLEEP * (2 ** (attempt - 1))
             _vprint(
                 f"[WARN] 429 rate-limit on attempt {attempt}/{LLM_MAX_RETRIES} "
-                f"at step {step} — sleeping {sleep_for:.0f}s before retry"
+                f"at step {step} -- sleeping {sleep_for:.0f}s before retry"
             )
             time.sleep(sleep_for)
 
-    # All retries exhausted — return empty dict so caller falls back gracefully
+    # All retries exhausted -- return empty dict so caller falls back gracefully
     _vprint(f"[WARN] All {LLM_MAX_RETRIES} LLM attempts failed at step {step}, using fallback")
     return {}
 
 
-# ── Build DCAction from LLM output ────────────────────────────────────────────
+# -- Build DCAction from LLM output --------------------------------------------
 def build_action(llm_result: dict, obs: DCObservation) -> DCAction:
     zone_obs_map = {z.zone_id: z for z in obs.zones}
     zone_ids = list(zone_obs_map.keys())
@@ -374,7 +374,7 @@ def _safe_mode_action(obs: DCObservation) -> DCAction:
     Conservative safe-mode fallback used when the LLM is completely unavailable
     and no prior LLM result exists.
 
-    Strategy: run fans at 85 % on all zones, use a cold supply setpoint (18 °C),
+    Strategy: run fans at 85 % on all zones, use a cold supply setpoint (18 C),
     and keep chiller active only if it is not already offline (re-enabling a
     failed chiller is silently ignored by the environment and wastes the action).
     This is far more conservative than repeating the first LLM step, which may
@@ -394,7 +394,7 @@ def _safe_mode_action(obs: DCObservation) -> DCAction:
         chiller_active=chiller_alive,
         reasoning=(
             "safe-mode fallback: LLM unavailable, no prior intent. "
-            "Running all fans at 85 %, supply at 18 °C to protect all zones."
+            "Running all fans at 85 %, supply at 18 C to protect all zones."
         ),
     )
 
@@ -405,7 +405,7 @@ def _effective_max_steps(task_max: int) -> int:
     return task_max
 
 
-# ── Run one task episode ───────────────────────────────────────────────────────
+# -- Run one task episode -------------------------------------------------------
 def run_task(task_cfg: dict) -> float:
     task_name = task_cfg["name"]
     max_steps = _effective_max_steps(int(task_cfg["max_steps"]))
@@ -423,7 +423,7 @@ def run_task(task_cfg: dict) -> float:
         obs: DCObservation = env.reset()
 
         _prev_temps: dict = {}
-        _last_llm_result: dict = {}     # last non-empty LLM response — held on transient failures
+        _last_llm_result: dict = {}     # last non-empty LLM response -- held on transient failures
 
         for step in range(1, max_steps + 1):
             obs_dict = {
@@ -443,7 +443,7 @@ def run_task(task_cfg: dict) -> float:
                 "zones": [
                     {
                         "zone_id": z.zone_id,
-                        # cold_aisle_temp_c reflects the sensor reading for this zone —
+                        # cold_aisle_temp_c reflects the sensor reading for this zone --
                         # for faulty sensors it equals reported_temp_c (drifted), NOT ground truth.
                         "cold_aisle_temp_c": z.cold_aisle_temp_c,
                         "hot_aisle_temp_c": z.hot_aisle_temp_c,
@@ -555,7 +555,7 @@ def run_task(task_cfg: dict) -> float:
             # Per-step wall-clock guard: stop the episode if we are running out of time
             elapsed = time.time() - _SCRIPT_START
             if elapsed >= GLOBAL_TIMEOUT_SECONDS - GLOBAL_TIMEOUT_BUFFER:
-                _vprint(f"[WARN] Wall-clock budget exhausted at step {step} — ending episode early")
+                _vprint(f"[WARN] Wall-clock budget exhausted at step {step} -- ending episode early")
                 break
 
             if STEP_SLEEP_SECONDS > 0:
@@ -580,12 +580,12 @@ def main() -> None:
     global client, _SCRIPT_START
     _SCRIPT_START = time.time()
 
-    # ── Set up dual-output logging (stdout + file) ────────────────────────────
+    # -- Set up dual-output logging (stdout + file) ----------------------------
     log_file = open("inference_output.txt", "w")
     sys.stdout = Tee(sys.stdout, log_file)
     sys.stderr = Tee(sys.stderr, log_file)
 
-    # ── Validate API key ──────────────────────────────────────────────────────
+    # -- Validate API key ------------------------------------------------------
     if not API_KEY:
         raise RuntimeError(
             "Set HF_TOKEN or OPENAI_API_KEY.\n"
@@ -593,7 +593,7 @@ def main() -> None:
             "  bash:       export HF_TOKEN='...'"
         )
 
-    # ── Initialise OpenAI-compatible client ───────────────────────────────────
+    # -- Initialise OpenAI-compatible client -----------------------------------
     client = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
 
     _vprint(f"[INFO] API_BASE_URL = {API_BASE_URL}")
@@ -606,7 +606,7 @@ def main() -> None:
         remaining = GLOBAL_TIMEOUT_SECONDS - elapsed
         if remaining < GLOBAL_TIMEOUT_BUFFER:
             _vprint(
-                f"[WARN] Skipping task '{task_cfg['name']}' — only {remaining:.0f}s "
+                f"[WARN] Skipping task '{task_cfg['name']}' -- only {remaining:.0f}s "
                 f"remaining (need >{GLOBAL_TIMEOUT_BUFFER}s buffer)"
             )
             all_scores.append(0.0)

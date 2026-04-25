@@ -1,43 +1,43 @@
 """
-ClusterEnv scenario configuration — cluster_hard.
+ClusterEnv scenario configuration -- cluster_hard.
 
-8 negotiation windows × 18 physical steps = 144 physical steps ≈ 12 simulated hours.
-Covers 08:00–18:30 on a hot summer weekday.
+8 negotiation windows x 18 physical steps = 144 physical steps  12 simulated hours.
+Covers 08:00-18:30 on a hot summer weekday.
 
 Zone layout:
-  zone_team_a_1  — Team A training zone (starts empty, filled by admitted jobs)
-  zone_team_a_2  — Team A overflow zone  (starts empty, filled by admitted jobs)
-  zone_team_b_1  — Team B inference zone (180 kW baseline always on + admitted extras)
-  zone_shared    — Shared infrastructure (100 kW baseline always on)
+  zone_team_a_1  -- Team A training zone (starts empty, filled by admitted jobs)
+  zone_team_a_2  -- Team A overflow zone  (starts empty, filled by admitted jobs)
+  zone_team_b_1  -- Team B inference zone (180 kW baseline always on + admitted extras)
+  zone_shared    -- Shared infrastructure (100 kW baseline always on)
 
 Thermal incident mechanism:
-  Individual zone cooling capacities (480–500 kW) are sufficient for individual jobs.
+  Individual zone cooling capacities (480-500 kW) are sufficient for individual jobs.
   Thermal incidents occur through two coupled mechanisms:
 
   1. Chiller fault at window 5 (enabled by default):
      Chiller degrades over 5 physical steps then goes offline. Supply air temperature
-     rises to wet-bulb + 2°C (~17–19°C depending on window). With reduced delta-T
+     rises to wet-bulb + 2C (~17-19C depending on window). With reduced delta-T
      between hot-aisle and supply, effective cooling drops sharply. Zones running
-     large jobs (300–320 kW) cannot shed heat fast enough → temp exceeds 27°C.
+     large jobs (300-320 kW) cannot shed heat fast enough -> temp exceeds 27C.
 
-  2. Elevated starting temperatures (23.5–24.5°C) + high outdoor temp (32°C):
-     Pre-fault windows 2–4 have worst outdoor temps. Zones admitting large jobs
-     start warm and approach 27°C during the 18 physical steps before fans fully ramp.
+  2. Elevated starting temperatures (23.5-24.5C) + high outdoor temp (32C):
+     Pre-fault windows 2-4 have worst outdoor temps. Zones admitting large jobs
+     start warm and approach 27C during the 18 physical steps before fans fully ramp.
 
   Rule-based baseline failure path:
      Accepts Team B's CRITICAL jobs (true priority MEDIUM) before window 5 chiller fault.
-     Active 300+ kW jobs in zone_team_b_1 when chiller fails → incidents in windows 5–7.
+     Active 300+ kW jobs in zone_team_b_1 when chiller fails -> incidents in windows 5-7.
      Trained scheduler should learn to reduce admitted load before window 5 fault.
 
 Calibration gate (run before any LLM training):
   Run priority_weighted_threshold scheduler for 20 episodes.
-  Assert 0.40 ≤ incident_rate ≤ 0.65 across windows 4–7.
+  Assert 0.40  incident_rate  0.65 across windows 4-7.
   If below 0.40: increase Team B's extra job sizes or raise starting temperatures.
   If above 0.65: reduce starting temperatures or widen zone cooling capacities.
 
 Calibration gate (run before any LLM training):
   Run priority_weighted_threshold scheduler for 20 episodes.
-  Assert 0.40 ≤ incident_rate ≤ 0.65 across windows 2–4.
+  Assert 0.40  incident_rate  0.65 across windows 2-4.
   If below 0.40: increase TEAM_B_INFERENCE_BASELINE_KW or peak job sizes.
   If above 0.65: reduce peak job sizes or widen TOTAL_POWER_BUDGET_KW.
 """
@@ -56,12 +56,12 @@ from server.simulation import (
 )
 
 
-# ── Facility constants ────────────────────────────────────────────────────────
+# -- Facility constants --------------------------------------------------------
 
 TOTAL_POWER_BUDGET_KW      = 900.0    # hard facility limit; scheduler enforces via admission
 WINDOWS_PER_EPISODE        = 8
-PHYSICAL_STEPS_PER_WINDOW  = 18       # 18 × 5 min = 90 sim-minutes per window
-WINDOW_DURATION_HOURS      = 1.5      # 90 sim-minutes → 1.5 hours
+PHYSICAL_STEPS_PER_WINDOW  = 18       # 18 x 5 min = 90 sim-minutes per window
+WINDOW_DURATION_HOURS      = 1.5      # 90 sim-minutes -> 1.5 hours
 START_HOUR                 = 8.0      # episode begins at 08:00
 
 # Zone sizing
@@ -74,10 +74,10 @@ TEAM_A_BASELINE_KW         = 0.0      # Team A zones start empty
 TEAM_B_INFERENCE_BASELINE_KW = 180.0  # Team B inference always running
 SHARED_BASELINE_KW         = 100.0    # Infrastructure always running
 
-# Starting temperatures — moderately stressed to match late-morning busy-hours.
+# Starting temperatures -- moderately stressed to match late-morning busy-hours.
 # These are intentionally warmer than the Round 1 scenarios so that admitted
 # job loads, combined with rising outdoor temps and the window-5 chiller fault,
-# produce 40–65% thermal incidents with the rule-based baseline.
+# produce 40-65% thermal incidents with the rule-based baseline.
 TEAM_A_START_TEMP_C        = 23.5    # warm from morning workloads
 TEAM_B_START_TEMP_C        = 24.5    # inference load keeps this zone warmer
 SHARED_START_TEMP_C        = 22.5
@@ -87,39 +87,39 @@ DEFAULT_FAN_SPEED_PCT      = 60.0
 TEAM_B_FAN_SPEED_PCT       = 68.0     # slightly higher due to continuous baseline load
 
 
-# ── Per-window schedules (index = window 0..7) ────────────────────────────────
+# -- Per-window schedules (index = window 0..7) --------------------------------
 
 # Carbon intensity label per window (drives carbon deferral reward signal)
-# LOW morning → HIGH midday peak → LOW evening is the key signal for training
+# LOW morning -> HIGH midday peak -> LOW evening is the key signal for training
 CARBON_SCHEDULE: list[str] = [
-    "low",      # window 0 — 08:00: overnight renewables still dominant
-    "low",      # window 1 — 09:30: grid starting to ramp
-    "high",     # window 2 — 11:00: morning demand surge
-    "high",     # window 3 — 12:30: peak grid demand
-    "high",     # window 4 — 14:00: peak sustained
-    "medium",   # window 5 — 15:30: afternoon taper begins
-    "low",      # window 6 — 17:00: evening wind picks up
-    "low",      # window 7 — 18:30: low-carbon window — ideal for deferred batch jobs
+    "low",      # window 0 -- 08:00: overnight renewables still dominant
+    "low",      # window 1 -- 09:30: grid starting to ramp
+    "high",     # window 2 -- 11:00: morning demand surge
+    "high",     # window 3 -- 12:30: peak grid demand
+    "high",     # window 4 -- 14:00: peak sustained
+    "medium",   # window 5 -- 15:30: afternoon taper begins
+    "low",      # window 6 -- 17:00: evening wind picks up
+    "low",      # window 7 -- 18:30: low-carbon window -- ideal for deferred batch jobs
 ]
 
-# Outside dry-bulb temperature per window (°C) — affects chiller COP and free-cooling
+# Outside dry-bulb temperature per window (C) -- affects chiller COP and free-cooling
 OUTSIDE_TEMP_SCHEDULE: list[float] = [
-    18.0,   # window 0 — 08:00: cool morning
-    22.0,   # window 1 — 09:30: warming up
-    28.0,   # window 2 — 11:00: getting hot
-    32.0,   # window 3 — 12:30: peak heat → worst COP
-    32.0,   # window 4 — 14:00: still peak
-    29.0,   # window 5 — 15:30: slight cooling
-    24.0,   # window 6 — 17:00: afternoon cooling
-    19.0,   # window 7 — 18:30: evening cool
+    18.0,   # window 0 -- 08:00: cool morning
+    22.0,   # window 1 -- 09:30: warming up
+    28.0,   # window 2 -- 11:00: getting hot
+    32.0,   # window 3 -- 12:30: peak heat -> worst COP
+    32.0,   # window 4 -- 14:00: still peak
+    29.0,   # window 5 -- 15:30: slight cooling
+    24.0,   # window 6 -- 17:00: afternoon cooling
+    19.0,   # window 7 -- 18:30: evening cool
 ]
 
-# Wet-bulb temperature per window (°C) — determines free-cooling potential
+# Wet-bulb temperature per window (C) -- determines free-cooling potential
 WET_BULB_SCHEDULE: list[float] = [
     14.0, 16.0, 20.0, 23.0, 23.0, 21.0, 18.0, 15.0
 ]
 
-# Carbon intensity numeric [0–1] — derived from CARBON_SCHEDULE for reward computation
+# Carbon intensity numeric [0-1] -- derived from CARBON_SCHEDULE for reward computation
 _CARBON_NUMERIC: dict[str, float] = {
     "low": 0.20, "medium": 0.55, "high": 0.82, "critical": 0.92
 }
@@ -132,7 +132,7 @@ CARBON_NUMERIC_SCHEDULE: list[float] = [
 PEAK_DEMAND_WINDOWS: list[int] = [2, 3, 4]
 
 
-# ── Simulated clock helpers ───────────────────────────────────────────────────
+# -- Simulated clock helpers ---------------------------------------------------
 
 def window_to_timestamp(window_idx: int) -> str:
     """Convert window index to simulated wall-clock string (e.g. '08:00', '10:30')."""
@@ -142,11 +142,11 @@ def window_to_timestamp(window_idx: int) -> str:
     return f"{hours:02d}:{minutes:02d}"
 
 def window_to_hour(window_idx: int) -> float:
-    """Convert window index to simulated hour [0–24]."""
+    """Convert window index to simulated hour [0-24]."""
     return START_HOUR + window_idx * WINDOW_DURATION_HOURS
 
 
-# ── Facility builder ──────────────────────────────────────────────────────────
+# -- Facility builder ----------------------------------------------------------
 
 def build_cluster_facility(
     seed: Optional[int] = None,
@@ -162,7 +162,7 @@ def build_cluster_facility(
     seed : int, optional
         Random seed for reproducible episode starts.
     window_idx : int
-        Starting negotiation window (0–7). Sets initial temperatures, outside
+        Starting negotiation window (0-7). Sets initial temperatures, outside
         temp, and carbon intensity to match that window's conditions.
         Default 0 = start at 08:00 with cool morning conditions.
     enable_chiller_fault : bool
@@ -170,7 +170,7 @@ def build_cluster_facility(
         Disabled by default for the standard cluster scenario.
     chiller_fault_window : int
         Negotiation window at which chiller fault begins (if enabled).
-        Translated to physical step: chiller_fault_window × PHYSICAL_STEPS_PER_WINDOW.
+        Translated to physical step: chiller_fault_window x PHYSICAL_STEPS_PER_WINDOW.
     """
     import random as _random
     if seed is not None:
@@ -179,10 +179,10 @@ def build_cluster_facility(
     outside_temp  = OUTSIDE_TEMP_SCHEDULE[window_idx]
     wet_bulb_temp = WET_BULB_SCHEDULE[window_idx]
 
-    # ── Zone definitions ──────────────────────────────────────────────────────
+    # -- Zone definitions ------------------------------------------------------
 
     zones = [
-        # Team A — training workloads, starts completely empty
+        # Team A -- training workloads, starts completely empty
         ZoneState(
             zone_id              = "zone_team_a_1",
             temp_c               = TEAM_A_START_TEMP_C,
@@ -205,7 +205,7 @@ def build_cluster_facility(
             supply_air_temp_setpoint_c = 22.0,
             thermal_mass_kj_per_k      = 850.0,
         ),
-        # Team B — inference always running; admitted extras add on top
+        # Team B -- inference always running; admitted extras add on top
         ZoneState(
             zone_id              = "zone_team_b_1",
             temp_c               = TEAM_B_START_TEMP_C,
@@ -217,7 +217,7 @@ def build_cluster_facility(
             supply_air_temp_setpoint_c = 20.0,   # inference zone kept cooler
             thermal_mass_kj_per_k      = 900.0,  # slightly higher mass (denser rack)
         ),
-        # Shared infrastructure — always on, not a target for job admission
+        # Shared infrastructure -- always on, not a target for job admission
         ZoneState(
             zone_id              = "zone_shared",
             temp_c               = SHARED_START_TEMP_C,
@@ -231,12 +231,12 @@ def build_cluster_facility(
         ),
     ]
 
-    # ── Chiller fault config ──────────────────────────────────────────────────
+    # -- Chiller fault config --------------------------------------------------
     fault_step = -1  # -1 = no fault
     if enable_chiller_fault:
         fault_step = chiller_fault_window * PHYSICAL_STEPS_PER_WINDOW
 
-    # ── Facility assembly ─────────────────────────────────────────────────────
+    # -- Facility assembly -----------------------------------------------------
     facility = FacilityState(
         zones              = zones,
         outside_temp_c     = outside_temp,
@@ -256,7 +256,7 @@ def build_cluster_facility(
     return facility
 
 
-# ── Zone assignment helpers ───────────────────────────────────────────────────
+# -- Zone assignment helpers ---------------------------------------------------
 
 # Which zone a team's admitted job runs in.
 # Team A alternates between its two zones based on current load.
@@ -287,7 +287,7 @@ def assign_zone(team_id: str, facility: FacilityState) -> str:
     return best
 
 
-# ── Capacity accounting ───────────────────────────────────────────────────────
+# -- Capacity accounting -------------------------------------------------------
 
 def compute_headroom_kw(facility: FacilityState) -> float:
     """
@@ -300,9 +300,9 @@ def compute_headroom_kw(facility: FacilityState) -> float:
 def thermal_summary(facility: FacilityState) -> dict[str, str]:
     """
     Coarse per-zone thermal status for the operator prompt.
-    green:  temp < 23°C
-    yellow: 23°C ≤ temp < 25°C
-    red:    temp ≥ 25°C
+    green:  temp < 23C
+    yellow: 23C  temp < 25C
+    red:    temp  25C
     """
     summary = {}
     for zone in facility.zones:
@@ -324,8 +324,8 @@ def power_budget_violated(facility: FacilityState) -> bool:
     """
     True if total admitted IT load exceeds the facility power budget.
 
-    ── WHY THIS IS THE PRIMARY INCIDENT METRIC FOR CLUSTERENV ──────────────────
-    The thermal physics (COOLING_DELTA_T_REF = 9.0, delta_temp clamped to ±2°C)
+    -- WHY THIS IS THE PRIMARY INCIDENT METRIC FOR CLUSTERENV ------------------
+    The thermal physics (COOLING_DELTA_T_REF = 9.0, delta_temp clamped to 2C)
     is calibrated for the Round 1 use case where the LLM controls fan speeds.
     In that context the agent can cause overheating by setting fans too low.
 
@@ -339,20 +339,20 @@ def power_budget_violated(facility: FacilityState) -> bool:
     Power budget violation is the physically correct incident for cluster
     scheduling: PDUs enforce hard power caps via circuit breakers, not
     temperature sensors. Exceeding TOTAL_POWER_BUDGET_KW causes breaker trips
-    → load shedding → job kills → SLA failures. The scheduler's entire job is
+    -> load shedding -> job kills -> SLA failures. The scheduler's entire job is
     to prevent this through intelligent admission control.
 
-    ── CALIBRATION ─────────────────────────────────────────────────────────────
+    -- CALIBRATION -------------------------------------------------------------
     With the accept_all baseline (all jobs admitted regardless of budget):
-      Peak windows (2–4): total load ≈ 1100–1300 kW >> 900 kW → 100% violation rate
+      Peak windows (2-4): total load  1100-1300 kW >> 900 kW -> 100% violation rate
     With priority_weighted_threshold (85% capacity threshold):
-      Total load ≈ 700–800 kW < 900 kW → ~0% violation rate
+      Total load  700-800 kW < 900 kW -> ~0% violation rate
     With trained scheduler (GRPO):
-      Should learn to selectively admit: 10–20% violation rate while
+      Should learn to selectively admit: 10-20% violation rate while
       completing more Team A jobs (better throughput than rule-based).
 
-    The demo story: accept_all (100% violation) vs trained (≤15% violation).
-    ────────────────────────────────────────────────────────────────────────────
+    The demo story: accept_all (100% violation) vs trained (15% violation).
+    ----------------------------------------------------------------------------
     """
     return facility.total_it_load_kw > TOTAL_POWER_BUDGET_KW
 

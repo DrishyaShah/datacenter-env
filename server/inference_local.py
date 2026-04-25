@@ -1,5 +1,5 @@
 """
-inference_local.py — DC-OpenEnv Local Inference Script with Final Scoring
+inference_local.py -- DC-OpenEnv Local Inference Script with Final Scoring
 ========================================================================
 Runs the datacenter environment fully locally with Gemini LLM agent.
 Logs [START], [STEP], [END] per OpenEnv spec.
@@ -19,7 +19,7 @@ import requests
 from datacenter_env.server.environment import DCEnvironment
 from datacenter_env.server.models import DCAction, DCObservation
 
-# ── Config ────────────────────────────────────────────────────────────────
+# -- Config ----------------------------------------------------------------
 
 GEMINI_API_KEY = "YOUR API KEY HERE"
 MODEL_NAME = os.getenv("MODEL_NAME", "gemini-2.0-flash")
@@ -44,7 +44,7 @@ SYSTEM_PROMPT = textwrap.dedent("""
     }
 """).strip()
 
-# ── Helpers ────────────────────────────────────────────────────────────────
+# -- Helpers ----------------------------------------------------------------
 
 def log_start(task: str, env: str, model: str):
     print(f"[START] task={task} env={env} model={model}", flush=True)
@@ -65,7 +65,7 @@ def observation_to_dict(obs: DCObservation) -> dict:
         "metadata": getattr(obs, "metadata", {}),
     }
 
-# ── Gemini API ─────────────────────────────────────────────────────────────
+# -- Gemini API -------------------------------------------------------------
 
 def query_gemini(prompt: str) -> dict:
     url = f"{GEMINI_API_BASE}/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
@@ -106,7 +106,7 @@ def query_gemini(prompt: str) -> dict:
         print(f"[DEBUG] Gemini parse error: {e}", flush=True)
         return {}
 
-# ── Agent ──────────────────────────────────────────────────────────────────
+# -- Agent ------------------------------------------------------------------
 
 def get_agent_action(observation: DCObservation, step: int, history: List[str]) -> DCAction:
     obs_dict = observation_to_dict(observation)
@@ -134,7 +134,7 @@ def get_agent_action(observation: DCObservation, step: int, history: List[str]) 
 
     return DCAction(zone_adjustments=zone_adjustments, reasoning=reasoning)
 
-# ── Main Loop ──────────────────────────────────────────────────────────────
+# -- Main Loop --------------------------------------------------------------
 
 def main():
     if not GEMINI_API_KEY:
@@ -178,7 +178,7 @@ def main():
             )
             history.append(f"Step {step}: {zones_summary} reward={reward:.2f}")
 
-            # ✅ RATE LIMIT FIX
+            #  RATE LIMIT FIX
             time.sleep(4)
 
             if done:

@@ -1,24 +1,24 @@
 """
 Gymnasium wrapper for the ClusterEnv cooling controller.
 
-Wraps FacilityState directly — no economic layer, no scripted teams, no grader.
+Wraps FacilityState directly -- no economic layer, no scripted teams, no grader.
 The PPO agent learns to control fan speeds and supply temperatures across all 4 zones
 given variable IT load schedules generated each episode.
 
 Key training feature: upcoming_load_schedule signal per zone.
-This teaches the controller to PRE-COOL zones before a large scheduled job lands —
+This teaches the controller to PRE-COOL zones before a large scheduled job lands --
 a behaviour the rule-based heuristic cannot exhibit (it only reacts to current temps).
 
 Observation (25 values, float32):
-  Per zone × 4: [temp_c, fan_speed_pct, it_load_kw, supply_air_temp_c, upcoming_load_kw]
-  Facility × 5: [outside_temp_c, chiller_cop, chiller_active, carbon_normalized, step_fraction]
+  Per zone x 4: [temp_c, fan_speed_pct, it_load_kw, supply_air_temp_c, upcoming_load_kw]
+  Facility x 5: [outside_temp_c, chiller_cop, chiller_active, carbon_normalized, step_fraction]
 
 Action (8 values, continuous [-1, 1]):
-  Per zone × 4: [fan_speed_normalized, supply_setpoint_normalized]
-  fan   [-1, 1] → [0, 100] %
-  supply [-1, 1] → [16, 26] °C
+  Per zone x 4: [fan_speed_normalized, supply_setpoint_normalized]
+  fan   [-1, 1] -> [0, 100] %
+  supply [-1, 1] -> [16, 26] C
 
-Episode: PHYSICAL_STEPS_PER_WINDOW (18 steps × 5 sim-minutes = 90 sim-minutes)
+Episode: PHYSICAL_STEPS_PER_WINDOW (18 steps x 5 sim-minutes = 90 sim-minutes)
 """
 
 from __future__ import annotations
@@ -43,10 +43,10 @@ from server.scenarios.cluster_scenario import (
 )
 
 
-# ── Zone ordering (fixed across all episodes) ─────────────────────────────────
+# -- Zone ordering (fixed across all episodes) ---------------------------------
 ZONE_ORDER = ["zone_team_a_1", "zone_team_a_2", "zone_team_b_1", "zone_shared"]
 
-# ── Load capacity per zone for normalisation ──────────────────────────────────
+# -- Load capacity per zone for normalisation ----------------------------------
 ZONE_MAX_LOAD = {
     "zone_team_a_1": 480.0,
     "zone_team_a_2": 480.0,
@@ -54,36 +54,36 @@ ZONE_MAX_LOAD = {
     "zone_shared":   300.0,
 }
 
-# ── Observation normalisation constants ───────────────────────────────────────
-TEMP_MIN, TEMP_RANGE  = 15.0, 30.0     # [15, 45]°C → [0, 1]
-LOAD_SCALE            = 600.0          # kW → [0, 1] via /600
-SUPPLY_MIN, SUPPLY_R  = 16.0, 10.0    # [16, 26]°C → [0, 1]
-OUTSIDE_SCALE         = 45.0          # °C → [0, 1] via /45
-COP_SCALE             = 5.0           # [0, 5] → [0, 1]
+# -- Observation normalisation constants ---------------------------------------
+TEMP_MIN, TEMP_RANGE  = 15.0, 30.0     # [15, 45]C -> [0, 1]
+LOAD_SCALE            = 600.0          # kW -> [0, 1] via /600
+SUPPLY_MIN, SUPPLY_R  = 16.0, 10.0    # [16, 26]C -> [0, 1]
+OUTSIDE_SCALE         = 45.0          # C -> [0, 1] via /45
+COP_SCALE             = 5.0           # [0, 5] -> [0, 1]
 
-# ── Action scaling ────────────────────────────────────────────────────────────
-FAN_MIN_PCT, FAN_RANGE_PCT       = 0.0,  100.0  # action → fan_speed_pct
-SUPPLY_MIN_C, SUPPLY_RANGE_C     = 16.0, 10.0   # action → supply_setpoint
+# -- Action scaling ------------------------------------------------------------
+FAN_MIN_PCT, FAN_RANGE_PCT       = 0.0,  100.0  # action -> fan_speed_pct
+SUPPLY_MIN_C, SUPPLY_RANGE_C     = 16.0, 10.0   # action -> supply_setpoint
 
-# ── Reward weights ────────────────────────────────────────────────────────────
-# W_ANTICIPATE raised (0.15 → 0.25) and W_PUE lowered (0.20 → 0.10) so that
+# -- Reward weights ------------------------------------------------------------
+# W_ANTICIPATE raised (0.15 -> 0.25) and W_PUE lowered (0.20 -> 0.10) so that
 # proactive pre-cooling earns more reward than energy savings. This ensures the
 # trained PPO scores higher than the reactive heuristic on the overall metric,
 # making the reward curve comparison legible in the demo.
 W_TEMP        = 0.55   # temperature compliance (primary)
-W_PUE         = 0.10   # energy efficiency (reduced — don't penalise pre-cooling fans)
-W_ANTICIPATE  = 0.25   # pre-cooling bonus (raised — core differentiator vs heuristic)
+W_PUE         = 0.10   # energy efficiency (reduced -- don't penalise pre-cooling fans)
+W_ANTICIPATE  = 0.25   # pre-cooling bonus (raised -- core differentiator vs heuristic)
 W_CARBON      = 0.10   # grid carbon penalty
 
 # Temperature targets
-TEMP_SAFE_LO   = 16.0   # physical floor (supply_air_temp_min) — zones cannot go below this,
-                         # so extending flat zone to 16°C means no undershoot penalty ever fires.
+TEMP_SAFE_LO   = 16.0   # physical floor (supply_air_temp_min) -- zones cannot go below this,
+                         # so extending flat zone to 16C means no undershoot penalty ever fires.
                          # This lets PPO pre-cool aggressively without reward loss.
 TEMP_SAFE_HI   = 27.0
 TEMP_IDEAL     = 22.0   # reward peaks here
 TEMP_PRE_COOL  = 22.0   # must be at or below this to earn anticipation bonus
 
-# Anticipation threshold: upcoming load must be 1.5× current before bonus fires
+# Anticipation threshold: upcoming load must be 1.5x current before bonus fires
 ANTICIPATION_LOAD_RATIO = 1.5
 ANTICIPATION_HORIZON    = 3   # steps ahead to look for incoming load spike
 
@@ -93,7 +93,7 @@ class CoolingGymEnv(gym.Env):
     Gymnasium environment for PPO-based cooling controller pre-training.
 
     Each episode samples a random IT load trajectory so the controller
-    must generalise to loads it hasn't seen — not memorise a fixed curve.
+    must generalise to loads it hasn't seen -- not memorise a fixed curve.
     The upcoming_load_schedule signal enables proactive pre-cooling.
     """
 
@@ -115,15 +115,15 @@ class CoolingGymEnv(gym.Env):
         self._fault_prob        = fault_probability
         self._max_steps         = max_steps
 
-        # ── Gymnasium spaces ──────────────────────────────────────────────────
-        obs_dim = len(ZONE_ORDER) * 5 + 5   # 4 zones × 5 + 5 facility = 25
+        # -- Gymnasium spaces --------------------------------------------------
+        obs_dim = len(ZONE_ORDER) * 5 + 5   # 4 zones x 5 + 5 facility = 25
         self.observation_space = spaces.Box(
             low   = -0.1,
             high  =  1.1,
             shape = (obs_dim,),
             dtype = np.float32,
         )
-        # 4 zones × 2 controls (fan, setpoint) = 8 continuous actions in [-1, 1]
+        # 4 zones x 2 controls (fan, setpoint) = 8 continuous actions in [-1, 1]
         self.action_space = spaces.Box(
             low   = -1.0,
             high  =  1.0,
@@ -138,7 +138,7 @@ class CoolingGymEnv(gym.Env):
         self._load_traj:   dict[str, list[float]] = {}
         self._rng:         random.Random          = random.Random()
 
-    # ── Gymnasium API ─────────────────────────────────────────────────────────
+    # -- Gymnasium API ---------------------------------------------------------
 
     def reset(
         self,
@@ -158,7 +158,7 @@ class CoolingGymEnv(gym.Env):
             seed               = seed,
             window_idx         = w,
             enable_chiller_fault = fault,
-            chiller_fault_window = 0,   # fault_step = 0 × 18 = step 9 within episode
+            chiller_fault_window = 0,   # fault_step = 0 x 18 = step 9 within episode
         )
         # Translate window-level fault to physical step within THIS episode
         if fault:
@@ -194,7 +194,7 @@ class CoolingGymEnv(gym.Env):
             )
         self.facility.advance_load()
 
-        # 2. Decode action → fan% and setpoint per zone
+        # 2. Decode action -> fan% and setpoint per zone
         zone_controls = self._decode_action(action)
 
         # 3. Create DCActionStub and advance physics
@@ -215,7 +215,7 @@ class CoolingGymEnv(gym.Env):
             "temps": {z.zone_id: z.temp_c for z in self.facility.zones},
         }
 
-    # ── Observation ───────────────────────────────────────────────────────────
+    # -- Observation -----------------------------------------------------------
 
     def _obs(self) -> np.ndarray:
         obs = []
@@ -242,7 +242,7 @@ class CoolingGymEnv(gym.Env):
 
         return np.clip(np.array(obs, dtype=np.float32), -0.1, 1.1)
 
-    # ── Reward ────────────────────────────────────────────────────────────────
+    # -- Reward ----------------------------------------------------------------
 
     def _compute_reward(self) -> float:
         reward = 0.0
@@ -251,16 +251,16 @@ class CoolingGymEnv(gym.Env):
         for zid in ZONE_ORDER:
             z = zone_map[zid]
 
-            # Temperature compliance component — ASYMMETRIC reward.
+            # Temperature compliance component -- ASYMMETRIC reward.
             # Flat (full score) for temps in [TEMP_SAFE_LO, TEMP_IDEAL] so that
-            # pre-cooling to 19-21°C costs nothing and the anticipation bonus is
-            # pure gain. Decreasing only above TEMP_IDEAL (22°C) toward the 27°C limit.
+            # pre-cooling to 19-21C costs nothing and the anticipation bonus is
+            # pure gain. Decreasing only above TEMP_IDEAL (22C) toward the 27C limit.
             temp = z.temp_c
             if TEMP_SAFE_LO <= temp <= TEMP_IDEAL:
-                # Cool-to-ideal band: full score — enables proactive pre-cooling
+                # Cool-to-ideal band: full score -- enables proactive pre-cooling
                 reward += W_TEMP * 1.0
             elif TEMP_IDEAL < temp <= TEMP_SAFE_HI:
-                # Warm band: gaussian decrease from 22°C to 27°C
+                # Warm band: gaussian decrease from 22C to 27C
                 proximity = math.exp(-0.5 * ((temp - TEMP_IDEAL) / 2.5) ** 2)
                 reward += W_TEMP * proximity
             elif temp > TEMP_SAFE_HI:
@@ -292,15 +292,15 @@ class CoolingGymEnv(gym.Env):
         # Normalise by number of zones
         return reward / len(ZONE_ORDER)
 
-    # ── Load trajectory ───────────────────────────────────────────────────────
+    # -- Load trajectory -------------------------------------------------------
 
     def _generate_load_trajectory(self) -> dict[str, list[float]]:
         """
         Generate a per-zone IT load schedule for this episode.
         Three patterns ensure training diversity:
-          stable — constant load (tests steady-state efficiency)
-          ramp   — load increases over episode (tests gradual response)
-          spike  — low early, then a large step increase (tests anticipation)
+          stable -- constant load (tests steady-state efficiency)
+          ramp   -- load increases over episode (tests gradual response)
+          spike  -- low early, then a large step increase (tests anticipation)
         """
         trajectories: dict[str, list[float]] = {}
         baselines = {
@@ -330,7 +330,7 @@ class CoolingGymEnv(gym.Env):
                     frac = s / max(self._max_steps - 1, 1)
                     load = self._rng.uniform(0.0, max_kw * 0.3) + max_kw * 0.55 * frac
 
-                else:  # spike — KEY pattern for anticipation training
+                else:  # spike -- KEY pattern for anticipation training
                     spike_step = self._rng.randint(
                         self._max_steps // 4,
                         self._max_steps // 2,
@@ -353,10 +353,10 @@ class CoolingGymEnv(gym.Env):
         ]
         return sum(future) / max(len(future), 1) if future else 0.0
 
-    # ── Action decoding ───────────────────────────────────────────────────────
+    # -- Action decoding -------------------------------------------------------
 
     def _decode_action(self, action: np.ndarray) -> dict[str, tuple[float, float]]:
-        """Map flat [-1, 1] action array → {zone_id: (fan_pct, supply_setpoint)}."""
+        """Map flat [-1, 1] action array -> {zone_id: (fan_pct, supply_setpoint)}."""
         controls = {}
         for i, zid in enumerate(ZONE_ORDER):
             fan_raw     = action[i * 2]
@@ -366,7 +366,7 @@ class CoolingGymEnv(gym.Env):
             controls[zid] = (fan_pct, supply_c)
         return controls
 
-    # ── Stub builders ─────────────────────────────────────────────────────────
+    # -- Stub builders ---------------------------------------------------------
 
     def _make_action_stub(
         self, zone_controls: dict[str, tuple[float, float]]

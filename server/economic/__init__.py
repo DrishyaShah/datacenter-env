@@ -1,5 +1,5 @@
 """
-ClusterEnv economic layer — public API.
+ClusterEnv economic layer -- public API.
 
 Import everything from here. Do not import from submodules directly.
 

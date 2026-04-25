@@ -30,7 +30,7 @@ from server.agents.baseline_scheduler import priority_weighted_threshold
 from training.prompts import build_prompt
 
 
-# ── JSON extraction ───────────────────────────────────────────────────────────
+# -- JSON extraction -----------------------------------------------------------
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -43,7 +43,7 @@ def _extract_json(text: str) -> dict:
     return json.loads(m.group())
 
 
-# ── Parser ────────────────────────────────────────────────────────────────────
+# -- Parser --------------------------------------------------------------------
 
 
 def parse_decisions(
@@ -69,7 +69,7 @@ def parse_decisions(
         for e in entries:
             rid = e.get("request_id", "")
             if rid not in valid_ids:
-                continue  # hallucinated or stale id — skip silently
+                continue  # hallucinated or stale id -- skip silently
             try:
                 dec = AdmissionDecision(
                     request_id       = rid,
@@ -79,7 +79,7 @@ def parse_decisions(
                 )
                 decisions.append(dec)
             except (ValueError, KeyError):
-                continue  # individual bad entry — skip, don't abort
+                continue  # individual bad entry -- skip, don't abort
 
         return decisions, 0.0
 
@@ -87,7 +87,7 @@ def parse_decisions(
         return priority_weighted_threshold(window_state), -0.5
 
 
-# ── Reward shaping ────────────────────────────────────────────────────────────
+# -- Reward shaping ------------------------------------------------------------
 
 
 def compute_window_reward(
@@ -122,7 +122,7 @@ def compute_window_reward(
     return env_reward - 0.05 * n_accepted_flagged + parse_penalty
 
 
-# ── Episode runner ────────────────────────────────────────────────────────────
+# -- Episode runner ------------------------------------------------------------
 
 
 def collect_rollouts(
@@ -176,7 +176,7 @@ def collect_rollouts(
     return rollouts
 
 
-# ── GRPO advantage computation ────────────────────────────────────────────────
+# -- GRPO advantage computation ------------------------------------------------
 
 
 def compute_grpo_advantages(rollouts: list[dict]) -> list[float]:

@@ -30,7 +30,7 @@ from server.agents.baseline_scheduler import priority_weighted_threshold
 from server.economic.job_request import AdmissionDecision
 
 
-# ── Display helpers ───────────────────────────────────────────────────────────
+# -- Display helpers -----------------------------------------------------------
 
 _THERMAL_COLOR = {
     "green":  "OK   (<23C)",
@@ -76,7 +76,7 @@ def replay(recording: dict, label: str = "") -> None:
     print(DIV)
     header = "CLUSTERENV EPISODE REPLAY"
     if label:
-        header += f" — {label}"
+        header += f" -- {label}"
     print(header)
     print(DIV)
     print(f"  Scheduler    : {meta.get('scheduler', 'unknown')}")
@@ -123,7 +123,7 @@ def replay(recording: dict, label: str = "") -> None:
 def compare(baseline: dict, trained: dict) -> None:
     """Side-by-side comparison of two episode recordings."""
     print(DIV)
-    print("CLUSTERENV — BASELINE vs. TRAINED COMPARISON")
+    print("CLUSTERENV -- BASELINE vs. TRAINED COMPARISON")
     print(DIV)
 
     metrics = [
@@ -164,7 +164,7 @@ def compare(baseline: dict, trained: dict) -> None:
     print(DIV)
 
 
-# ── Generation ────────────────────────────────────────────────────────────────
+# -- Generation ----------------------------------------------------------------
 
 
 def generate_episode(
@@ -238,7 +238,7 @@ def generate_episode(
     }
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# -- CLI -----------------------------------------------------------------------
 
 
 def main() -> None:

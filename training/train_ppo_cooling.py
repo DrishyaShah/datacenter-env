@@ -15,19 +15,19 @@ Usage:
     python training/train_ppo_cooling.py
 
 Output:
-    training/cooling_controller_pretrained.zip   ← load with PPO.load(...)
-    training/cooling_controller_best/            ← best checkpoint during eval
-    training/ppo_cooling_reward_curve.png        ← commit this to the repo
+    training/cooling_controller_pretrained.zip    load with PPO.load(...)
+    training/cooling_controller_best/             best checkpoint during eval
+    training/ppo_cooling_reward_curve.png         commit this to the repo
 """
 
 import os
 import sys
 import numpy as np
 import matplotlib
-matplotlib.use("Agg")   # non-interactive backend — safe for Windows / headless
+matplotlib.use("Agg")   # non-interactive backend -- safe for Windows / headless
 import matplotlib.pyplot as plt
 
-# ── Make project root importable ─────────────────────────────────────────────
+# -- Make project root importable ---------------------------------------------
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
@@ -40,8 +40,8 @@ from stable_baselines3.common.env_checker import check_env
 from training.gym_cooling_env import CoolingGymEnv
 
 
-# ── Training configuration ────────────────────────────────────────────────────
-TOTAL_TIMESTEPS  = 80_000    # 80k is sufficient — flat zone fix removes undershoot trap
+# -- Training configuration ----------------------------------------------------
+TOTAL_TIMESTEPS  = 80_000    # 80k is sufficient -- flat zone fix removes undershoot trap
 N_ENVS           = 4         # parallel environments (speeds up rollout collection)
 EVAL_FREQ        = 10_000    # evaluate every N steps
 N_EVAL_EPISODES  = 20        # episodes per evaluation run
@@ -66,7 +66,7 @@ PPO_CONFIG = dict(
 )
 
 
-# ── Reward curve logger ───────────────────────────────────────────────────────
+# -- Reward curve logger -------------------------------------------------------
 
 class RewardLogger(BaseCallback):
     """Logs mean episode reward every EVAL_FREQ steps for plotting."""
@@ -109,7 +109,7 @@ def save_reward_plot(steps, rewards, path: str) -> None:
     ax.axhline(0, color="gray", linestyle="--", linewidth=0.8, label="zero baseline")
     ax.set_xlabel("Training step", fontsize=12)
     ax.set_ylabel("Mean episode reward", fontsize=12)
-    ax.set_title("PPO Cooling Controller — Training Reward Curve", fontsize=13)
+    ax.set_title("PPO Cooling Controller -- Training Reward Curve", fontsize=13)
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -118,18 +118,18 @@ def save_reward_plot(steps, rewards, path: str) -> None:
     print(f"  Reward curve saved -> {path}")
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# -- Entry point ---------------------------------------------------------------
 
 def main():
     print("=" * 60)
-    print("ClusterEnv PPO Cooling Controller — Pre-training")
+    print("ClusterEnv PPO Cooling Controller -- Pre-training")
     print("=" * 60)
     print(f"  Total timesteps : {TOTAL_TIMESTEPS:,}")
     print(f"  Parallel envs   : {N_ENVS}")
     print(f"  Eval frequency  : every {EVAL_FREQ:,} steps")
     print()
 
-    # ── Step 1: Validate the environment against Gymnasium spec ───────────────
+    # -- Step 1: Validate the environment against Gymnasium spec ---------------
     print("Validating environment...")
     debug_env = CoolingGymEnv(randomize_loads=False)  # deterministic for check
     check_env(debug_env, warn=True)
@@ -137,7 +137,7 @@ def main():
     print("  Environment OK")
     print()
 
-    # ── Step 2: Create vectorised training environments ───────────────────────
+    # -- Step 2: Create vectorised training environments -----------------------
     train_env = make_vec_env(
         lambda: CoolingGymEnv(
             randomize_loads      = True,
@@ -151,13 +151,13 @@ def main():
         include_chiller_fault = False,
     )
 
-    # ── Step 3: Build PPO model ───────────────────────────────────────────────
+    # -- Step 3: Build PPO model -----------------------------------------------
     model = PPO("MlpPolicy", train_env, **PPO_CONFIG)
     print(f"Model policy: {model.policy}")
     print(f"Parameters  : {sum(p.numel() for p in model.policy.parameters()):,}")
     print()
 
-    # ── Step 4: Callbacks ─────────────────────────────────────────────────────
+    # -- Step 4: Callbacks -----------------------------------------------------
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
     save_callback = EvalCallback(
@@ -177,7 +177,7 @@ def main():
         verbose       = 1,
     )
 
-    # ── Step 5: Train ─────────────────────────────────────────────────────────
+    # -- Step 5: Train ---------------------------------------------------------
     print("Starting training...")
     model.learn(
         total_timesteps = TOTAL_TIMESTEPS,
@@ -187,14 +187,14 @@ def main():
     print()
     print("Training complete.")
 
-    # ── Step 6: Save final model ──────────────────────────────────────────────
+    # -- Step 6: Save final model ----------------------------------------------
     model.save(FINAL_MODEL_PATH)
     print(f"  Final model saved -> {FINAL_MODEL_PATH}.zip")
 
     best_path = os.path.join(CHECKPOINT_DIR, "best_model")
     print(f"  Best model saved -> {best_path}.zip")
 
-    # ── Step 7: Save reward curve (must be committed to repo) ─────────────────
+    # -- Step 7: Save reward curve (must be committed to repo) -----------------
     if reward_logger.steps_log:
         save_reward_plot(
             reward_logger.steps_log,
@@ -203,7 +203,7 @@ def main():
         )
     print()
 
-    # ── Step 8: Quick evaluation of trained vs. rule-based heuristic ─────────
+    # -- Step 8: Quick evaluation of trained vs. rule-based heuristic ---------
     from server.agents.cooling_heuristic import CoolingHeuristic
     from server.scenarios.cluster_scenario import build_cluster_facility
 
@@ -239,8 +239,8 @@ def main():
             hr += sum(1.0 if 18 <= t <= 27 else -0.5 for t in temps) / len(temps)
         heuristic_rewards.append(hr / 18)
 
-    print(f"  PPO mean reward:      {np.mean(ppo_rewards):.4f} ± {np.std(ppo_rewards):.4f}")
-    print(f"  Heuristic mean reward:{np.mean(heuristic_rewards):.4f} ± {np.std(heuristic_rewards):.4f}")
+    print(f"  PPO mean reward:      {np.mean(ppo_rewards):.4f}  {np.std(ppo_rewards):.4f}")
+    print(f"  Heuristic mean reward:{np.mean(heuristic_rewards):.4f}  {np.std(heuristic_rewards):.4f}")
     print()
 
     # Save comparison plot

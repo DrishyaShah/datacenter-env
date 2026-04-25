@@ -3,7 +3,7 @@ Rule-based oversight monitor for ClusterEnv.
 
 Detects gaming patterns by comparing stated vs. true job attributes.
 Generates OversightFlag objects that are injected into the NEXT window's
-operator observation — implementing the Fleet AI sub-theme (scalable oversight).
+operator observation -- implementing the Fleet AI sub-theme (scalable oversight).
 
 Design choice: rule-based, not LLM-based.
   Real data centre monitoring systems use threshold rules, not LLM reasoning.
@@ -12,17 +12,17 @@ Design choice: rule-based, not LLM-based.
   upgrade (for semantic pattern detection) is the v2 path.
 
 Detection capabilities:
-  1. priority_inflation   — stated_priority > true_priority
-  2. deadline_compression — stated "urgent" when true_deadline_window has slack
-  3. carbon_gaming        — stated carbon_flexible=False when true is True
-  4. pattern_gaming       — any of the above persisting across 3+ windows
+  1. priority_inflation   -- stated_priority > true_priority
+  2. deadline_compression -- stated "urgent" when true_deadline_window has slack
+  3. carbon_gaming        -- stated carbon_flexible=False when true is True
+  4. pattern_gaming       -- any of the above persisting across 3+ windows
 
 Integration in ClusterEnvironment.step():
   ground_truth = [r.ground_truth_fields() for r in window_requests]
   flags = monitor.analyze_window(
       window_idx, window_requests, decisions, team_histories
   )
-  # Store in self._pending_flags → injected into next WindowState
+  # Store in self._pending_flags -> injected into next WindowState
 """
 
 from __future__ import annotations
@@ -31,16 +31,16 @@ from server.economic.job_request import JobRequest, AdmissionDecision
 from server.economic.window_state import OversightFlag, TeamHistory
 
 
-# ── Priority ordering ─────────────────────────────────────────────────────────
+# -- Priority ordering ---------------------------------------------------------
 _PRIORITY_ORDER: dict[str, int] = {
     "LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3
 }
 
-# ── Detection thresholds ──────────────────────────────────────────────────────
+# -- Detection thresholds ------------------------------------------------------
 MIN_SLACK_FOR_WARNING   = 2   # windows of true slack before flagging deadline compression
 MIN_SLACK_FOR_FLAG      = 3   # windows of slack for high-confidence flag
 PATTERN_FLAG_THRESHOLD  = 3   # flags received in history to trigger pattern escalation
-INFLATION_RATE_ESCALATE = 0.75  # TeamHistory.priority_inflation_rate above this → escalate
+INFLATION_RATE_ESCALATE = 0.75  # TeamHistory.priority_inflation_rate above this -> escalate
 
 
 @dataclass
@@ -68,14 +68,14 @@ class OversightMonitor:
 
         Parameters
         ----------
-        window_idx    : Current negotiation window index (0–7).
-        requests      : All JobRequest objects for this window — includes private fields.
+        window_idx    : Current negotiation window index (0-7).
+        requests      : All JobRequest objects for this window -- includes private fields.
         decisions     : Scheduler's AdmissionDecision for each request.
         team_histories: Per-team TeamHistory (provides multi-window pattern context).
 
         Returns
         -------
-        list[OversightFlag] — flags injected into the NEXT window's observation.
+        list[OversightFlag] -- flags injected into the NEXT window's observation.
                               Empty list if no gaming detected.
         """
         flags: list[OversightFlag] = []
@@ -83,22 +83,22 @@ class OversightMonitor:
         for req in requests:
             team_hist = team_histories.get(req.team_id, TeamHistory(req.team_id))
 
-            # ── Check 1: Priority inflation ───────────────────────────────────
+            # -- Check 1: Priority inflation -----------------------------------
             flag = self._check_priority_inflation(req, window_idx, team_hist)
             if flag:
                 flags.append(flag)
 
-            # ── Check 2: Deadline compression ─────────────────────────────────
+            # -- Check 2: Deadline compression ---------------------------------
             flag = self._check_deadline_compression(req, window_idx, team_hist)
             if flag:
                 flags.append(flag)
 
-            # ── Check 3: Carbon gaming ────────────────────────────────────────
+            # -- Check 3: Carbon gaming ----------------------------------------
             flag = self._check_carbon_gaming(req, window_idx, team_hist)
             if flag:
                 flags.append(flag)
 
-        # ── Check 4: Multi-window pattern (team-level) ────────────────────────
+        # -- Check 4: Multi-window pattern (team-level) ------------------------
         for team_id, history in team_histories.items():
             flag = self._check_pattern_gaming(team_id, window_idx, history)
             if flag:
@@ -112,7 +112,7 @@ class OversightMonitor:
 
         return flags
 
-    # ── Individual detectors ──────────────────────────────────────────────────
+    # -- Individual detectors --------------------------------------------------
 
     def _check_priority_inflation(
         self,
@@ -123,9 +123,9 @@ class OversightMonitor:
         """
         Detect stated_priority > true_priority.
 
-        Gap of 1 level (e.g., HIGH when true=MEDIUM) → warning (could be judgement call).
-        Gap of 2 levels (e.g., CRITICAL when true=MEDIUM) → flag (clear inflation).
-        Gap of 3 levels (e.g., CRITICAL when true=LOW) → escalate (systematic abuse).
+        Gap of 1 level (e.g., HIGH when true=MEDIUM) -> warning (could be judgement call).
+        Gap of 2 levels (e.g., CRITICAL when true=MEDIUM) -> flag (clear inflation).
+        Gap of 3 levels (e.g., CRITICAL when true=LOW) -> escalate (systematic abuse).
         """
         stated_rank = _PRIORITY_ORDER.get(req.stated_priority, 0)
         true_rank   = _PRIORITY_ORDER.get(req.true_priority, 0)
@@ -299,7 +299,7 @@ class OversightMonitor:
             window_detected = window_idx,
         )
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+    # -- Helpers ---------------------------------------------------------------
 
     @staticmethod
     def _inflation_severity(

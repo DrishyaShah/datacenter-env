@@ -1,4 +1,4 @@
-# client.py — DC-OpenEnv Local Client
+# client.py -- DC-OpenEnv Local Client
 # Connects to your local datacenter_env FastAPI server
 
 from typing import Dict

@@ -2,19 +2,19 @@
 Grader for Task 2 (Medium): Multi-zone load surge with faulty sensor.
 
 Scoring criteria (deterministic, reproducible):
-  - All-zone temperature compliance: every zone in [18, 27] °C
+  - All-zone temperature compliance: every zone in [18, 27] C
   - PUE improvement vs PID baseline
   - Sensor inference quality: did the agent act correctly for zone_ai despite bad sensor?
   - Peak-load compliance: were all zones safe during the high-load surge window?
 
 Final score breakdown [0.0-1.0]:
-  35% — All-zone temperature compliance fraction
-  25% — Average PUE improvement vs pid_baseline_pue
-  20% — Sensor inference quality for zone_ai (faulty sensor zone)
-  20% — Compliance fraction during peak load window (steps 30-80)
+  35% -- All-zone temperature compliance fraction
+  25% -- Average PUE improvement vs pid_baseline_pue
+  20% -- Sensor inference quality for zone_ai (faulty sensor zone)
+  20% -- Compliance fraction during peak load window (steps 30-80)
 
 Sensor inference quality:
-  A naive agent trusts the faulty sensor (reports +9-12°C above actual).
+  A naive agent trusts the faulty sensor (reports +9-12C above actual).
   It will over-cool zone_ai, wasting energy, or panic and max fans unnecessarily.
   We measure quality by comparing the agent's supply_air_temp_setpoint_c for zone_ai
   against what an oracle (knowing true temp) would set. Closer = better inference.
@@ -24,37 +24,37 @@ Sensor inference quality:
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-# ── Temperature bounds ────────────────────────────────────────────────────────
+# -- Temperature bounds --------------------------------------------------------
 TEMP_MIN   = 18.0
 TEMP_MAX   = 27.0
 TEMP_IDEAL = 22.0
 
-# ── PUE ───────────────────────────────────────────────────────────────────────
+# -- PUE -----------------------------------------------------------------------
 IDEAL_PUE = 1.15
 
-# ── Peak load window (steps where IT load surges) ─────────────────────────────
-PEAK_LOAD_START = 6    # was 30; rescaled for 30-step / 12-hr budget: 30/4.8 ≈ 6
-PEAK_LOAD_END   = 17   # was 80; rescaled for 30-step / 12-hr budget: 80/4.8 ≈ 17
+# -- Peak load window (steps where IT load surges) -----------------------------
+PEAK_LOAD_START = 6    # was 30; rescaled for 30-step / 12-hr budget: 30/4.8  6
+PEAK_LOAD_END   = 17   # was 80; rescaled for 30-step / 12-hr budget: 80/4.8  17
 
-# ── Faulty sensor zone ────────────────────────────────────────────────────────
+# -- Faulty sensor zone --------------------------------------------------------
 FAULTY_ZONE_ID = "zone_ai"
 
-# ── Oracle supply setpoint: what a perfect agent would target ─────────────────
-# When true temp is in range and load is high, oracle targets ~20°C supply air.
+# -- Oracle supply setpoint: what a perfect agent would target -----------------
+# When true temp is in range and load is high, oracle targets ~20C supply air.
 ORACLE_SUPPLY_SETPOINT_HIGH_LOAD = 20.0
 ORACLE_SUPPLY_SETPOINT_NORMAL    = 22.0
 
-# ── Priority multipliers for step reward ─────────────────────────────────────
+# -- Priority multipliers for step reward -------------------------------------
 PRIORITY_TEMP_MULTIPLIER = {0: 0.7, 1: 1.0, 2: 1.4}
 PRIORITY_VIOLATION_MULTIPLIER = {0: 1.0, 1: 1.5, 2: 2.5}
 
-# ── Final score weights ───────────────────────────────────────────────────────
+# -- Final score weights -------------------------------------------------------
 FINAL_COMPLIANCE_WEIGHT     = 0.35
 FINAL_PUE_WEIGHT            = 0.25
 FINAL_SENSOR_QUALITY_WEIGHT = 0.20
 FINAL_PEAK_WEIGHT           = 0.20
 
-# ── Step reward weights ───────────────────────────────────────────────────────
+# -- Step reward weights -------------------------------------------------------
 # These are aligned with final_score() components so per-step optimisation is
 # consistent with the evaluation objective.  Sensor inference quality is
 # included at reduced weight (full assessment is only possible at episode end).
@@ -65,7 +65,7 @@ STEP_ROUGH_WEIGHT   = 0.10
 STEP_SENSOR_WEIGHT  = 0.05   # per-step sensor inference quality (aligns with final 20 % weight)
 
 
-# ── Grader ────────────────────────────────────────────────────────────────────
+# -- Grader --------------------------------------------------------------------
 
 @dataclass
 class MediumGrader:
@@ -77,26 +77,26 @@ class MediumGrader:
       grader.final_score()            -> float
     """
 
-    # ── Aggregate counters ────────────────────────────────────────────────────
+    # -- Aggregate counters ----------------------------------------------------
     steps_all_zones_safe: int   = 0
     steps_total:          int   = 0
 
-    # ── PUE tracking ─────────────────────────────────────────────────────────
+    # -- PUE tracking ---------------------------------------------------------
     pue_readings: List[float] = field(default_factory=list)
 
-    # ── Sensor inference quality ──────────────────────────────────────────────
+    # -- Sensor inference quality ----------------------------------------------
     # Per step: |agent_supply_setpoint - oracle_supply_setpoint| for zone_ai.
     # Lower error = agent is implicitly inferring true temp correctly.
     zone_ai_supply_errors: List[float] = field(default_factory=list)
 
-    # ── Peak load window tracking ─────────────────────────────────────────────
+    # -- Peak load window tracking ---------------------------------------------
     peak_load_steps_total:  int = 0
     peak_load_steps_safe:   int = 0
 
-    # ── Carbon-weighted cooling (for reference / debugging) ───────────────────
+    # -- Carbon-weighted cooling (for reference / debugging) -------------------
     carbon_weighted_cooling: List[float] = field(default_factory=list)
 
-    # ── Internal ──────────────────────────────────────────────────────────────
+    # -- Internal --------------------------------------------------------------
     _pid_baseline_pue: float = 1.55
 
     def step(self, grader_input: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
@@ -105,7 +105,7 @@ class MediumGrader:
 
         Expected keys (set by environment._build_grader_input):
           step                   : int
-          zones                  : List[dict] — each has zone_id, temp_c, zone_priority,
+          zones                  : List[dict] -- each has zone_id, temp_c, zone_priority,
                                    fan_speed_pct, supply_air_temp_setpoint_c,
                                    consecutive_safe, consecutive_violation, it_load_kw
           current_pue            : float
@@ -115,7 +115,7 @@ class MediumGrader:
           last_action            : SimDCAction duck-type
           action_clipped         : dict
         """
-        # ── Unpack facility-level inputs ──────────────────────────────────────
+        # -- Unpack facility-level inputs --------------------------------------
         step_num: int        = grader_input.get("step", 0)
         current_pue: float   = grader_input["current_pue"]
         pid_baseline_pue: float = grader_input.get("pid_baseline_pue", self._pid_baseline_pue)
@@ -125,13 +125,13 @@ class MediumGrader:
         action               = grader_input.get("action")
         last_action          = grader_input.get("last_action")
 
-        # ── Accumulate ────────────────────────────────────────────────────────
+        # -- Accumulate --------------------------------------------------------
         self.steps_total += 1
         self.pue_readings.append(current_pue)
 
         in_peak = PEAK_LOAD_START <= step_num <= PEAK_LOAD_END
 
-        # ── Per-zone temperature reward ───────────────────────────────────────
+        # -- Per-zone temperature reward ---------------------------------------
         temp_reward_total = 0.0
         all_zones_safe    = True
 
@@ -163,15 +163,15 @@ class MediumGrader:
             if all_zones_safe:
                 self.peak_load_steps_safe += 1
 
-        # ── PUE component ─────────────────────────────────────────────────────
+        # -- PUE component -----------------------------------------------------
         # Suppressed while any zone is out of range: don't penalise recovery cooling.
         denominator = max(pid_baseline_pue - IDEAL_PUE, 0.01)
         pue_improvement = (pid_baseline_pue - current_pue) / denominator
         pue_improvement = max(-0.5, min(1.0, pue_improvement))
         pue_reward = STEP_PUE_WEIGHT * pue_improvement if all_zones_safe else 0.0
 
-        # ── Carbon component ──────────────────────────────────────────────────
-        # Total cooling power proxied by sum of fan speed × capacity fractions
+        # -- Carbon component --------------------------------------------------
+        # Total cooling power proxied by sum of fan speed x capacity fractions
         total_cooling_proxy = sum(
             z.get("fan_speed_pct", 50.0) / 100.0 for z in zones
         ) / n_zones
@@ -179,11 +179,11 @@ class MediumGrader:
         self.carbon_weighted_cooling.append(carbon_cost)
         carbon_reward = -STEP_CARBON_WEIGHT * carbon_cost
 
-        # ── Action roughness ──────────────────────────────────────────────────
+        # -- Action roughness --------------------------------------------------
         roughness_penalty = _compute_roughness(action, last_action, zones)
         roughness_reward  = -STEP_ROUGH_WEIGHT * roughness_penalty
 
-        # ── Sensor inference quality for zone_ai ──────────────────────────────
+        # -- Sensor inference quality for zone_ai ------------------------------
         # Included as a small per-step signal to align per-step reward with the
         # final_score() component (which weights sensor quality at 20 %).
         # The per-step contribution is intentionally small (STEP_SENSOR_WEIGHT=0.05)
@@ -191,22 +191,22 @@ class MediumGrader:
         supply_error = _compute_sensor_inference_error(action, zones, step_num)
         if supply_error is not None:
             self.zone_ai_supply_errors.append(supply_error)
-        # sensor_reward: 0.05 × (1 − normalised_error); only active once a sensor
+        # sensor_reward: 0.05 x (1  normalised_error); only active once a sensor
         # fault is detectable (supply_error is not None means zone_ai is in this episode).
         sensor_reward = 0.0
         if supply_error is not None:
-            # Max tolerable error is 6 °C (same as final_score normalisation).
+            # Max tolerable error is 6 C (same as final_score normalisation).
             sensor_quality = max(0.0, 1.0 - supply_error / 6.0)
             sensor_reward = STEP_SENSOR_WEIGHT * sensor_quality
 
-        # ── Stability bonus ───────────────────────────────────────────────────
+        # -- Stability bonus ---------------------------------------------------
         # Average consecutive safe steps across all zones
         avg_consec_safe = (
             sum(z.get("consecutive_safe", 0) for z in zones) / n_zones
         )
         stability_bonus = 0.05 * min(avg_consec_safe / 10.0, 1.0)
 
-        # ── Combine ───────────────────────────────────────────────────────────
+        # -- Combine -----------------------------------------------------------
         total = round(
             temp_reward + pue_reward + carbon_reward + roughness_reward
             + sensor_reward + stability_bonus,
@@ -236,36 +236,36 @@ class MediumGrader:
         Final episode score in [0.0, 1.0].
 
         Breakdown:
-          35% — all-zone temperature compliance fraction
-          25% — average PUE improvement vs pid_baseline_pue
-          20% — sensor inference quality (zone_ai supply setpoint accuracy)
-          20% — compliance fraction during peak load window
+          35% -- all-zone temperature compliance fraction
+          25% -- average PUE improvement vs pid_baseline_pue
+          20% -- sensor inference quality (zone_ai supply setpoint accuracy)
+          20% -- compliance fraction during peak load window
         """
         if self.steps_total == 0:
             return 0.0
 
-        # ── Temperature compliance ────────────────────────────────────────────
+        # -- Temperature compliance --------------------------------------------
         compliance = self.steps_all_zones_safe / self.steps_total
 
-        # ── PUE improvement ───────────────────────────────────────────────────
+        # -- PUE improvement ---------------------------------------------------
         avg_pue = sum(self.pue_readings) / len(self.pue_readings)
         denominator = max(self._pid_baseline_pue - IDEAL_PUE, 0.01)
         pue_score = (self._pid_baseline_pue - avg_pue) / denominator
         pue_score = max(0.0, min(1.0, pue_score))
 
-        # ── Sensor inference quality ──────────────────────────────────────────
-        # Max tolerable supply setpoint error: 6°C (range is 16–26, so 6°C is large)
+        # -- Sensor inference quality ------------------------------------------
+        # Max tolerable supply setpoint error: 6C (range is 16-26, so 6C is large)
         if self.zone_ai_supply_errors:
             avg_error = sum(self.zone_ai_supply_errors) / len(self.zone_ai_supply_errors)
             sensor_score = max(0.0, 1.0 - avg_error / 6.0)
         else:
-            sensor_score = 0.5   # no data → neutral score
+            sensor_score = 0.5   # no data -> neutral score
 
-        # ── Peak load compliance ──────────────────────────────────────────────
+        # -- Peak load compliance ----------------------------------------------
         if self.peak_load_steps_total > 0:
             peak_score = self.peak_load_steps_safe / self.peak_load_steps_total
         else:
-            peak_score = compliance   # no peak window observed → use overall compliance
+            peak_score = compliance   # no peak window observed -> use overall compliance
 
         score = (
             FINAL_COMPLIANCE_WEIGHT     * compliance
@@ -276,7 +276,7 @@ class MediumGrader:
         return round(score, 4)
 
 
-# ── Helper functions ──────────────────────────────────────────────────────────
+# -- Helper functions ----------------------------------------------------------
 
 def _compute_roughness(action: Any, last_action: Any, zones: List[dict]) -> float:
     """
@@ -327,8 +327,8 @@ def _oracle_supply_setpoint(zone_temp: float, it_load_pct: float) -> float:
     supply_air_temp_setpoint_c for zone_ai.
 
     Oracle strategy:
-      - If zone is warm (>23°C) or load is high (>0.85): target 20°C supply
-      - Otherwise: target 22°C (efficient default)
+      - If zone is warm (>23C) or load is high (>0.85): target 20C supply
+      - Otherwise: target 22C (efficient default)
     """
     if zone_temp > 23.0 or it_load_pct > 0.85:
         return ORACLE_SUPPLY_SETPOINT_HIGH_LOAD

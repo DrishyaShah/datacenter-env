@@ -1,5 +1,5 @@
 """
-PPOCoolingController — wraps a Stable-Baselines3 PPO model as a ClusterEnvironment
+PPOCoolingController -- wraps a Stable-Baselines3 PPO model as a ClusterEnvironment
 cooling_controller.
 
 Observation encoding and action decoding mirror CoolingGymEnv exactly so the loaded
@@ -17,7 +17,7 @@ from server.scenarios.cluster_scenario import PHYSICAL_STEPS_PER_WINDOW
 
 ZONE_ORDER = ["zone_team_a_1", "zone_team_a_2", "zone_team_b_1", "zone_shared"]
 
-# Normalisation constants — must match CoolingGymEnv exactly
+# Normalisation constants -- must match CoolingGymEnv exactly
 TEMP_MIN    = 15.0
 TEMP_RANGE  = 30.0
 LOAD_SCALE  = 600.0

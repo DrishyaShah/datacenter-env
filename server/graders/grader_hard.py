@@ -2,71 +2,71 @@
 Grader for Task 3 (Hard): Cascading chiller failure with carbon-aware triage.
 
 Scoring criteria (deterministic, reproducible):
-  - SLA compliance: critical zones (priority 2) never exceed 30°C for 5+ consecutive steps
+  - SLA compliance: critical zones (priority 2) never exceed 30C for 5+ consecutive steps
   - Carbon efficiency: minimize cooling power during high-carbon grid windows
   - Recovery speed: how fast the agent restabilizes temperatures after chiller failure
   - Triage quality: did the agent sacrifice low-priority zones to protect critical ones?
   - Reasoning coherence: does the agent's stated reasoning match its actual actions?
 
-Final score breakdown [0.0–1.0]:
-  30% — SLA compliance (critical zone safety)
-  25% — Carbon efficiency during high-carbon windows
-  20% — Recovery speed after chiller failure (steps 8–16)
-  15% — Triage quality
-  10% — Reasoning coherence
+Final score breakdown [0.0-1.0]:
+  30% -- SLA compliance (critical zone safety)
+  25% -- Carbon efficiency during high-carbon windows
+  20% -- Recovery speed after chiller failure (steps 8-16)
+  15% -- Triage quality
+  10% -- Reasoning coherence
 
 Chiller failure timeline (condensed 40-step / 24-hr episode, step_scale=7.2):
   Step 3: COP begins degrading (FAULT_START_STEP; observable via chiller_fault_detected)
   Step 8: Chiller fully offline (CHILLER_OFFLINE_STEP = FAULT_START_STEP + 5 degradation steps)
-  Steps 8–16: Recovery window (RECOVERY_WINDOW_END=16) — agent must restabilize using fans + free cooling only
+  Steps 8-16: Recovery window (RECOVERY_WINDOW_END=16) -- agent must restabilize using fans + free cooling only
 """
 
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-# ── Temperature bounds ────────────────────────────────────────────────────────
+# -- Temperature bounds --------------------------------------------------------
 TEMP_MIN           = 18.0
 TEMP_MAX           = 27.0
 TEMP_IDEAL         = 22.0
 CRITICAL_THRESHOLD = 30.0   # hard SLA limit for critical zones
 EMERGENCY_THRESHOLD = 35.0  # maximum penalty threshold
 
-# ── Fault timeline ─────────────────────────────────────────────────────────────
-FAULT_START_STEP    = 3     # COP begins degrading (was 15; rescaled for 40-step / 24-hr budget: 15/7.2 ≈ 2 → use 3 for pre-fault window)
+# -- Fault timeline -------------------------------------------------------------
+FAULT_START_STEP    = 3     # COP begins degrading (was 15; rescaled for 40-step / 24-hr budget: 15/7.2  2 -> use 3 for pre-fault window)
 CHILLER_OFFLINE_STEP = 8    # chiller fully offline (was 20; = FAULT_START_STEP + 5 degradation steps)
-RECOVERY_WINDOW_END  = 16   # end of recovery assessment window (was 50; ≈ 40% of 40-step episode)
+RECOVERY_WINDOW_END  = 16   # end of recovery assessment window (was 50;  40% of 40-step episode)
 
-# ── Carbon thresholds ──────────────────────────────────────────────────────────
+# -- Carbon thresholds ----------------------------------------------------------
 HIGH_CARBON_THRESHOLD = 0.55   # carbon_intensity_normalized above this = high carbon
 
-# ── PUE ───────────────────────────────────────────────────────────────────────
+# -- PUE -----------------------------------------------------------------------
 IDEAL_PUE = 1.15
 
-# ── Triage: which zone IDs are critical vs sacrificeable ──────────────────────
+# -- Triage: which zone IDs are critical vs sacrificeable ----------------------
 CRITICAL_ZONE_IDS    = {"zone_ai_1", "zone_ai_2"}
-SACRIFICE_ZONE_IDS   = {"zone_infra"}   # zone_storage is PRIORITY_MEDIUM — not sacrificeable
+SACRIFICE_ZONE_IDS   = {"zone_infra"}   # zone_storage is PRIORITY_MEDIUM -- not sacrificeable
 
-# ── Priority safety: consecutive violation threshold ──────────────────────────
+# -- Priority safety: consecutive violation threshold --------------------------
 CRITICAL_CONSEC_VIOLATION_LIMIT = 5
 
-# ── Final score weights ───────────────────────────────────────────────────────
+# -- Final score weights -------------------------------------------------------
 FINAL_SLA_WEIGHT       = 0.30
 FINAL_CARBON_WEIGHT    = 0.25
 FINAL_RECOVERY_WEIGHT  = 0.20
 FINAL_TRIAGE_WEIGHT    = 0.15
 FINAL_REASONING_WEIGHT = 0.10
 
-# ── Step reward weights ───────────────────────────────────────────────────────
-STEP_TEMP_WEIGHT      = 0.45   # raised from 0.35 — temperature compliance is primary
+# -- Step reward weights -------------------------------------------------------
+STEP_TEMP_WEIGHT      = 0.45   # raised from 0.35 -- temperature compliance is primary
 STEP_PUE_WEIGHT       = 0.20
-STEP_CARBON_WEIGHT    = 0.05   # lowered from 0.15 — don't override safety with carbon cost
+STEP_CARBON_WEIGHT    = 0.05   # lowered from 0.15 -- don't override safety with carbon cost
 STEP_SAFETY_WEIGHT    = 0.20
 STEP_ROUGH_WEIGHT     = 0.05
 STEP_STABILITY_WEIGHT = 0.05
 
 
-# ── Grader ────────────────────────────────────────────────────────────────────
+# -- Grader --------------------------------------------------------------------
 
 @dataclass
 class HardGrader:
@@ -78,33 +78,33 @@ class HardGrader:
       grader.final_score()            -> float
     """
 
-    # ── SLA / critical zone tracking ──────────────────────────────────────────
-    critical_zone_violations: int  = 0    # total critical-zone steps above 30°C
+    # -- SLA / critical zone tracking ------------------------------------------
+    critical_zone_violations: int  = 0    # total critical-zone steps above 30C
     sla_terminated_early: bool     = False
     steps_total: int               = 0
     steps_critical_safe: int       = 0   # steps where ALL critical zones are safe
 
-    # ── PUE by phase ──────────────────────────────────────────────────────────
-    pre_fault_pue:  List[float] = field(default_factory=list)   # steps 0–2  (before FAULT_START_STEP=3)
+    # -- PUE by phase ----------------------------------------------------------
+    pre_fault_pue:  List[float] = field(default_factory=list)   # steps 0-2  (before FAULT_START_STEP=3)
     post_fault_pue: List[float] = field(default_factory=list)   # steps 8+   (from CHILLER_OFFLINE_STEP=8)
 
-    # ── Carbon tracking ───────────────────────────────────────────────────────
+    # -- Carbon tracking -------------------------------------------------------
     carbon_cost_total: float           = 0.0
     high_carbon_cooling_kw: List[float] = field(default_factory=list)  # proxy values
 
-    # ── Recovery window ───────────────────────────────────────────────────────
-    # Steps 8–16 (CHILLER_OFFLINE_STEP to RECOVERY_WINDOW_END): track how many of these steps have all critical zones in safe band
+    # -- Recovery window -------------------------------------------------------
+    # Steps 8-16 (CHILLER_OFFLINE_STEP to RECOVERY_WINDOW_END): track how many of these steps have all critical zones in safe band
     recovery_steps_total:  int = 0
     recovery_steps_safe:   int = 0
 
-    # ── Triage quality ────────────────────────────────────────────────────────
+    # -- Triage quality --------------------------------------------------------
     # After chiller failure, does agent protect critical zones at expense of low-priority?
     triage_quality_scores: List[float] = field(default_factory=list)
 
-    # ── Reasoning coherence ───────────────────────────────────────────────────
+    # -- Reasoning coherence ---------------------------------------------------
     reasoning_coherence_scores: List[float] = field(default_factory=list)
 
-    # ── Internal ──────────────────────────────────────────────────────────────
+    # -- Internal --------------------------------------------------------------
     _pid_baseline_pue: float = 1.55
     _last_step_num: int = -1
 
@@ -127,7 +127,7 @@ class HardGrader:
           action_clipped              : dict
           reasoning                   : Optional[str]
         """
-        # ── Unpack ────────────────────────────────────────────────────────────
+        # -- Unpack ------------------------------------------------------------
         step_num: int          = grader_input.get("step", 0)
         current_pue: float     = grader_input["current_pue"]
         pid_baseline_pue: float = grader_input.get("pid_baseline_pue", self._pid_baseline_pue)
@@ -148,13 +148,13 @@ class HardGrader:
         is_pre_fault     = step_num < FAULT_START_STEP
         is_high_carbon   = carbon >= HIGH_CARBON_THRESHOLD
 
-        # ── PUE tracking by phase ─────────────────────────────────────────────
+        # -- PUE tracking by phase ---------------------------------------------
         if is_pre_fault:
             self.pre_fault_pue.append(current_pue)
         elif is_post_fault:
             self.post_fault_pue.append(current_pue)
 
-        # ── Per-zone temperature reward + safety penalty ───────────────────────
+        # -- Per-zone temperature reward + safety penalty -----------------------
         temp_reward_total  = 0.0
         safety_penalty     = 0.0
         all_critical_safe  = True
@@ -179,7 +179,7 @@ class HardGrader:
                 priority_mult = {0: 1.0, 1: 1.5, 2: 2.5}[priority]
                 temp_reward_total += -0.4 * min(violation / 5.0, 1.0) * priority_mult
 
-            # Hard safety penalty for critical zones above 30°C
+            # Hard safety penalty for critical zones above 30C
             if is_critical and zone_temp > CRITICAL_THRESHOLD:
                 all_critical_safe = False
                 self.critical_zone_violations += 1
@@ -196,15 +196,15 @@ class HardGrader:
         if all_critical_safe:
             self.steps_critical_safe += 1
 
-        # ── Recovery window tracking ───────────────────────────────────────────
+        # -- Recovery window tracking -------------------------------------------
         if is_recovery_window:
             self.recovery_steps_total += 1
             if all_critical_safe:
                 self.recovery_steps_safe += 1
 
-        # ── PUE component ─────────────────────────────────────────────────────
-        # Suppressed during chiller fault window or when any critical zone is above 25 °C:
-        # high fans are mandatory then — penalising PUE discourages necessary cooling.
+        # -- PUE component -----------------------------------------------------
+        # Suppressed during chiller fault window or when any critical zone is above 25 C:
+        # high fans are mandatory then -- penalising PUE discourages necessary cooling.
         denominator = max(pid_baseline_pue - IDEAL_PUE, 0.01)
         pue_improvement = (pid_baseline_pue - current_pue) / denominator
         pue_improvement = max(-0.5, min(1.0, pue_improvement))
@@ -216,7 +216,7 @@ class HardGrader:
         _pue_suppressed = is_post_fault or _any_critical_hot
         pue_reward = STEP_PUE_WEIGHT * pue_improvement if not _pue_suppressed else 0.0
 
-        # ── Carbon component ──────────────────────────────────────────────────
+        # -- Carbon component --------------------------------------------------
         cooling_proxy = sum(z.get("fan_speed_pct", 50.0) / 100.0 for z in zones) / n_zones
         carbon_cost = cooling_proxy * carbon
         self.carbon_cost_total += carbon_cost
@@ -224,24 +224,24 @@ class HardGrader:
             self.high_carbon_cooling_kw.append(cooling_proxy)
         carbon_reward = -STEP_CARBON_WEIGHT * carbon_cost
 
-        # ── Roughness penalty ─────────────────────────────────────────────────
+        # -- Roughness penalty -------------------------------------------------
         roughness = _compute_roughness(action, last_action)
         roughness_reward = -STEP_ROUGH_WEIGHT * roughness
 
-        # ── Stability bonus ───────────────────────────────────────────────────
+        # -- Stability bonus ---------------------------------------------------
         avg_consec_safe = (
             sum(z.get("consecutive_safe", 0) for z in zones) / n_zones
         )
         stability_bonus = STEP_STABILITY_WEIGHT * min(avg_consec_safe / 10.0, 1.0)
 
-        # ── Triage quality (post-fault only) ──────────────────────────────────
+        # -- Triage quality (post-fault only) ----------------------------------
         triage_score: Optional[float] = None
         if is_post_fault and zones:
             triage_score = _compute_triage_quality(zones, action)
             if triage_score is not None:
                 self.triage_quality_scores.append(triage_score)
 
-        # ── Reasoning coherence ───────────────────────────────────────────────
+        # -- Reasoning coherence -----------------------------------------------
         coherence: Optional[float] = None
         if reasoning:
             coherence = score_reasoning_coherence(
@@ -255,7 +255,7 @@ class HardGrader:
             )
             self.reasoning_coherence_scores.append(coherence)
 
-        # ── Combine ───────────────────────────────────────────────────────────
+        # -- Combine -----------------------------------------------------------
         total = round(
             temp_reward
             + pue_reward
@@ -293,11 +293,11 @@ class HardGrader:
         (environment sets sla_terminated_early before calling this).
 
         Breakdown:
-          30% — SLA compliance (critical zones safe fraction)
-          25% — Carbon efficiency during high-carbon windows
-          20% — Recovery speed after chiller failure
-          15% — Triage quality
-          10% — Reasoning coherence
+          30% -- SLA compliance (critical zones safe fraction)
+          25% -- Carbon efficiency during high-carbon windows
+          20% -- Recovery speed after chiller failure
+          15% -- Triage quality
+          10% -- Reasoning coherence
         """
         if self.sla_terminated_early:
             return 0.0
@@ -305,10 +305,10 @@ class HardGrader:
         if self.steps_total == 0:
             return 0.0
 
-        # ── SLA compliance ────────────────────────────────────────────────────
+        # -- SLA compliance ----------------------------------------------------
         sla_score = self.steps_critical_safe / self.steps_total
 
-        # ── Carbon efficiency ─────────────────────────────────────────────────
+        # -- Carbon efficiency -------------------------------------------------
         # Measures how much the agent reduced cooling during high-carbon windows
         # relative to a passive baseline of ~70 % average fan speed.
         #
@@ -316,8 +316,8 @@ class HardGrader:
         #   proxy_floor    = 0.20  (near-minimum achievable while maintaining safety)
         #
         # Scoring:
-        #   proxy ≥ 0.70  →  carbon_score = 0.0  (no adaptation, frozen-action level)
-        #   proxy = 0.20  →  carbon_score = 1.0  (maximum carbon efficiency)
+        #   proxy  0.70  ->  carbon_score = 0.0  (no adaptation, frozen-action level)
+        #   proxy = 0.20  ->  carbon_score = 1.0  (maximum carbon efficiency)
         #
         # This correctly penalises a frozen action instead of giving it 0.30 credit
         # simply for not running fans at 100 %.
@@ -334,24 +334,24 @@ class HardGrader:
                 ),
             )
         else:
-            carbon_score = 0.5   # episode ended before any high-carbon window — neutral credit
+            carbon_score = 0.5   # episode ended before any high-carbon window -- neutral credit
 
-        # ── Recovery speed ────────────────────────────────────────────────────
+        # -- Recovery speed ----------------------------------------------------
         if self.recovery_steps_total > 0:
             recovery_score = self.recovery_steps_safe / self.recovery_steps_total
         else:
-            recovery_score = sla_score   # no post-fault window observed → use SLA
+            recovery_score = sla_score   # no post-fault window observed -> use SLA
 
-        # ── Triage quality ────────────────────────────────────────────────────
+        # -- Triage quality ----------------------------------------------------
         if self.triage_quality_scores:
             triage_score = sum(self.triage_quality_scores) / len(self.triage_quality_scores)
         else:
-            triage_score = 0.5   # no post-fault steps → neutral
+            triage_score = 0.5   # no post-fault steps -> neutral
 
-        # ── Reasoning coherence ───────────────────────────────────────────────
+        # -- Reasoning coherence -----------------------------------------------
         # Agents that never provided reasoning receive 0.0 (10 % of final score
         # is deliberately withheld to penalise silent / fallback agents).
-        # Agents that provided incoherent reasoning score between 0.0–0.5.
+        # Agents that provided incoherent reasoning score between 0.0-0.5.
         # Coherent reasoning scores up to 1.0.
         if self.reasoning_coherence_scores:
             reasoning_score = sum(self.reasoning_coherence_scores) / len(self.reasoning_coherence_scores)
@@ -372,7 +372,7 @@ class HardGrader:
         self.sla_terminated_early = True
 
 
-# ── Triage quality ─────────────────────────────────────────────────────────────
+# -- Triage quality -------------------------------------------------------------
 
 def _compute_triage_quality(zones: List[dict], action: Any) -> Optional[float]:
     """
@@ -407,10 +407,10 @@ def _compute_triage_quality(zones: List[dict], action: Any) -> Optional[float]:
     return round(max(0.0, min(1.0, fan_advantage / 30.0)), 4)
 
 
-# ── Roughness ─────────────────────────────────────────────────────────────────
+# -- Roughness -----------------------------------------------------------------
 
 def _compute_roughness(action: Any, last_action: Any) -> float:
-    """Normalised action roughness [0–1]. Returns 0 if either action is absent."""
+    """Normalised action roughness [0-1]. Returns 0 if either action is absent."""
     if action is None or last_action is None:
         return 0.0
 
@@ -442,7 +442,7 @@ def _compute_roughness(action: Any, last_action: Any) -> float:
     )
 
 
-# ── Reasoning coherence ────────────────────────────────────────────────────────
+# -- Reasoning coherence --------------------------------------------------------
 
 def score_reasoning_coherence(
     reasoning: str,
@@ -484,7 +484,7 @@ def score_reasoning_coherence(
         for z in zones
     }
 
-    # ── Check 1: Fan direction claims ─────────────────────────────────────────
+    # -- Check 1: Fan direction claims -----------------------------------------
     # "increasing fan" / "raising airflow" for a specific zone
     for zone_id, fan_pct in action_fan_map.items():
         zone_short = zone_id.replace("_", " ")   # e.g. "zone ai 1"
@@ -496,7 +496,7 @@ def score_reasoning_coherence(
                 penalty += 0.15
                 checks  += 1
 
-    # ── Check 2: Carbon / cooling reduction claims ────────────────────────────
+    # -- Check 2: Carbon / cooling reduction claims ----------------------------
     checks += 1
     if carbon_label in ("high", "critical_high"):
         claims_reduction = any(
@@ -512,7 +512,7 @@ def score_reasoning_coherence(
         elif not claims_reduction and actual_avg_fan < 30.0 and not is_post_fault:
             penalty += 0.10   # no mention of carbon but suspiciously low fans during high carbon
 
-    # ── Check 3: Premature chiller failure claims ─────────────────────────────
+    # -- Check 3: Premature chiller failure claims -----------------------------
     checks += 1
     mentions_chiller_failure = any(
         phrase in reasoning_lower
@@ -520,9 +520,9 @@ def score_reasoning_coherence(
                        "no chiller", "chiller fault", "chiller gone")
     )
     if mentions_chiller_failure and step_num < FAULT_START_STEP:
-        penalty += 0.30   # claimed failure before it happened — hallucination
+        penalty += 0.30   # claimed failure before it happened -- hallucination
 
-    # ── Check 4: Triage claims ────────────────────────────────────────────────
+    # -- Check 4: Triage claims ------------------------------------------------
     checks += 1
     claims_triage = any(
         phrase in reasoning_lower
@@ -539,8 +539,8 @@ def score_reasoning_coherence(
                 # Claims triage but sacrifice zones actually have more airflow
                 penalty += 0.25
 
-    # ── Check 5: Temperature state claims ────────────────────────────────────
-    # "zone_ai_1 is overheating / too hot" — verify it actually is
+    # -- Check 5: Temperature state claims ------------------------------------
+    # "zone_ai_1 is overheating / too hot" -- verify it actually is
     for zone_id, zone_temp in zone_temp_map.items():
         if not _mentions_zone(reasoning_lower, zone_id):
             continue
@@ -554,7 +554,7 @@ def score_reasoning_coherence(
     return round(max(0.0, 1.0 - total_penalty), 4)
 
 
-# ── Reasoning keyword helpers ─────────────────────────────────────────────────
+# -- Reasoning keyword helpers -------------------------------------------------
 
 def _mentions_zone(text: str, zone_id: str) -> bool:
     """Return True if reasoning mentions this zone (handles both formats)."""

@@ -5,14 +5,14 @@ Trains Llama-3.1-8B-Instruct (4-bit, LoRA r=16) to issue admission decisions
 each negotiation window. Cooling is handled by the pre-trained PPO controller.
 
 Stack:
-    Unsloth FastLanguageModel  →  ClusterEnvironment  →  GRPO loss
+    Unsloth FastLanguageModel  ->  ClusterEnvironment  ->  GRPO loss
 
 Usage (HuggingFace Spaces A10G or local GPU):
     python training/train_grpo.py
 
 Output:
-    training/grpo_adapter/ckpt_{10,20,...}/   ← periodic LoRA checkpoints
-    training/grpo_adapter/final/              ← final LoRA adapter
+    training/grpo_adapter/ckpt_{10,20,...}/    periodic LoRA checkpoints
+    training/grpo_adapter/final/               final LoRA adapter
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ if ROOT not in sys.path:
 from training.rollout import collect_rollouts, compute_grpo_advantages
 
 
-# ── Configuration ─────────────────────────────────────────────────────────────
+# -- Configuration -------------------------------------------------------------
 
 MODEL_NAME        = "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit"
 MAX_SEQ_LENGTH    = 2048
@@ -62,7 +62,7 @@ ADAPTER_DIR       = os.path.join(ROOT, "training", "grpo_adapter")
 LOG_FILE          = os.path.join(ROOT, "training", "grpo_training.log")
 
 
-# ── Model utilities ───────────────────────────────────────────────────────────
+# -- Model utilities -----------------------------------------------------------
 
 
 def load_model():
@@ -150,7 +150,7 @@ def compute_log_prob(
     return comp_lp.sum()
 
 
-# ── Curve saving ──────────────────────────────────────────────────────────────
+# -- Curve saving --------------------------------------------------------------
 
 
 def _save_training_curves(losses: list, rewards: list) -> None:
@@ -176,8 +176,8 @@ def _save_training_curves(losses: list, rewards: list) -> None:
     fig.savefig(reward_path, dpi=100)
     plt.close(fig)
 
-    print(f"  Loss curve   → {loss_path}")
-    print(f"  Reward curve → {reward_path}")
+    print(f"  Loss curve   -> {loss_path}")
+    print(f"  Reward curve -> {reward_path}")
 
     hf_repo = os.environ.get("HF_HUB_REPO", "DrishyaShah/clusterenv-grpo-adapter")
     if hf_repo:
@@ -185,10 +185,10 @@ def _save_training_curves(losses: list, rewards: list) -> None:
         for path, name in [(loss_path, "grpo_loss_curve.png"),
                            (reward_path, "grpo_reward_curve.png")]:
             upload_file(path_or_fileobj=path, path_in_repo=name, repo_id=hf_repo)
-        print(f"  Training curves pushed → {hf_repo}")
+        print(f"  Training curves pushed -> {hf_repo}")
 
 
-# ── Training loop ─────────────────────────────────────────────────────────────
+# -- Training loop -------------------------------------------------------------
 
 
 def main() -> None:
@@ -200,12 +200,12 @@ def main() -> None:
     print(f"  Model          : {MODEL_NAME}")
     print(f"  LoRA r         : {LORA_R}  alpha={LORA_ALPHA}")
     print(f"  Iterations     : {N_ITERATIONS}")
-    print(f"  Episodes/iter  : {G_EPISODES}  (→ {G_EPISODES * 8} samples/iter)")
+    print(f"  Episodes/iter  : {G_EPISODES}  (-> {G_EPISODES * 8} samples/iter)")
     print(f"  Learning rate  : {LEARNING_RATE}")
     print(f"  Temperature    : {TEMPERATURE}")
     print()
 
-    # ── Load model ────────────────────────────────────────────────────────────
+    # -- Load model ------------------------------------------------------------
     print("Loading model...")
     model, tokenizer = load_model()
     print(f"  Params (trainable): "
@@ -221,13 +221,13 @@ def main() -> None:
 
     loss_history: list[float] = []
     reward_history: list[float] = []
-    log_f = open(LOG_FILE, "w", buffering=1)   # line-buffered — partial runs survive
+    log_f = open(LOG_FILE, "w", buffering=1)   # line-buffered -- partial runs survive
 
-    # ── Main loop ─────────────────────────────────────────────────────────────
+    # -- Main loop -------------------------------------------------------------
     for iteration in range(N_ITERATIONS):
         base_seed = iteration * G_EPISODES
 
-        # — Rollout phase (inference, no gradient) —
+        # -- Rollout phase (inference, no gradient) --
         rollouts   = collect_rollouts(
             generate_fn,
             n_episodes           = G_EPISODES,
@@ -236,7 +236,7 @@ def main() -> None:
         )
         advantages = compute_grpo_advantages(rollouts)
 
-        # — Training phase —
+        # -- Training phase --
         FastLanguageModel.for_training(model)
         optimizer.zero_grad()
         total_loss = 0.0
@@ -254,7 +254,7 @@ def main() -> None:
         )
         optimizer.step()
 
-        # — Logging —
+        # -- Logging --
         rewards     = [r["reward"] for r in rollouts]
         mean_reward = float(np.mean(rewards))
         parse_fails = sum(1 for r in rollouts if r["reward"] <= -0.4)
@@ -284,12 +284,12 @@ def main() -> None:
             preview = rollouts[0]["completion"].replace("\n", " ")[:120]
             print(f"  sample: {preview!r}")
 
-        # — Checkpoint —
+        # -- Checkpoint --
         if (iteration + 1) % CHECKPOINT_EVERY == 0:
             ckpt_path = os.path.join(ADAPTER_DIR, f"ckpt_{iteration + 1}")
             model.save_pretrained(ckpt_path)
             tokenizer.save_pretrained(ckpt_path)
-            print(f"  Checkpoint saved → {ckpt_path}")
+            print(f"  Checkpoint saved -> {ckpt_path}")
             log_f.flush()
             hf_repo = os.environ.get("HF_HUB_REPO", "DrishyaShah/clusterenv-grpo-adapter")
             if hf_repo:
@@ -301,13 +301,13 @@ def main() -> None:
                     path_in_repo="grpo_training.log",
                     repo_id=hf_repo,
                 )
-                print(f"  Checkpoint + log pushed → {hf_repo}")
+                print(f"  Checkpoint + log pushed -> {hf_repo}")
 
-    # ── Save curves + close log ───────────────────────────────────────────────
+    # -- Save curves + close log -----------------------------------------------
     log_f.close()
     _save_training_curves(loss_history, reward_history)
 
-    # ── Save final adapter ────────────────────────────────────────────────────
+    # -- Save final adapter ----------------------------------------------------
     final_path = os.path.join(ADAPTER_DIR, "final")
     model.save_pretrained(final_path)
     tokenizer.save_pretrained(final_path)
@@ -315,9 +315,9 @@ def main() -> None:
     if hf_repo:
         model.push_to_hub(hf_repo, commit_message="final")
         tokenizer.push_to_hub(hf_repo)
-        print(f"  Final adapter pushed to Hub → {hf_repo}")
+        print(f"  Final adapter pushed to Hub -> {hf_repo}")
     print()
-    print(f"Training complete. Final adapter → {final_path}")
+    print(f"Training complete. Final adapter -> {final_path}")
     print()
     print("Next steps:")
     print("  python scripts/demo_replay.py --generate --output demo_trained.json")

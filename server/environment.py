@@ -1,5 +1,5 @@
 """
-DC-OpenEnv: Data Centre Operations Environment — V2
+DC-OpenEnv: Data Centre Operations Environment -- V2
 
 Fully OpenEnv-compliant environment.
 Manages episodes, steps, rewards, and observations for all three DC cooling tasks.
@@ -39,15 +39,15 @@ from .graders.grader_medium import MediumGrader
 from .graders.grader_hard import HardGrader
 
 
-# ── Constants ─────────────────────────────────────────────────────────────────
+# -- Constants -----------------------------------------------------------------
 
 SAFE_TEMP_MIN = 18.0
 SAFE_TEMP_MAX = 27.0
 
-# Hard termination thresholds (per spec §4 Episode Boundaries)
+# Hard termination thresholds (per spec 4 Episode Boundaries)
 MEDIUM_MAX_CONSECUTIVE_VIOLATIONS = 10      # any zone unsafe for 10+ consecutive steps
-HARD_CRITICAL_TEMP_THRESHOLD = 32.0         # °C
-HARD_CRITICAL_CONSECUTIVE_STEPS = 5         # sustained breach → episode ends, score = 0
+HARD_CRITICAL_TEMP_THRESHOLD = 32.0         # C
+HARD_CRITICAL_CONSECUTIVE_STEPS = 5         # sustained breach -> episode ends, score = 0
 
 # History buffer depth (for temporal observation)
 HISTORY_BUFFER_DEPTH = 3
@@ -65,11 +65,11 @@ def _reward_detail_as_dict(detail: Any) -> Dict[str, Any]:
     return {}
 
 
-# ── Task registry ─────────────────────────────────────────────────────────────
+# -- Task registry -------------------------------------------------------------
 
 TASK_CONFIGS: Dict[str, Dict[str, Any]] = {
     "easy-single-zone": {
-        "max_steps": 20,       # 20 steps × 12 min/step = 4 hr (full 14:00–18:00 arc)
+        "max_steps": 20,       # 20 steps x 12 min/step = 4 hr (full 14:00-18:00 arc)
         "step_scale": 2.4,     # condense original 48-step plan: idx = step * 2.4
         "scenario_builder": build_easy_scenario,
         "grader_class": EasyGraderState,
@@ -77,7 +77,7 @@ TASK_CONFIGS: Dict[str, Dict[str, Any]] = {
         "hard_termination": False,
     },
     "medium-multi-zone": {
-        "max_steps": 30,       # 30 steps × 24 min/step = 12 hr (full 06:00–18:00 arc)
+        "max_steps": 30,       # 30 steps x 24 min/step = 12 hr (full 06:00-18:00 arc)
         "step_scale": 4.8,     # condense original 144-step plan: idx = step * 4.8
         "scenario_builder": build_medium_scenario,
         "grader_class": MediumGrader,
@@ -86,26 +86,26 @@ TASK_CONFIGS: Dict[str, Dict[str, Any]] = {
         "hard_term_mode": "violation_streak",   # 10+ consecutive steps any zone unsafe
     },
     "hard-cascading-failure": {
-        "max_steps": 40,       # 40 steps × 36 min/step = 24 hr (full 00:00–24:00 arc)
+        "max_steps": 40,       # 40 steps x 36 min/step = 24 hr (full 00:00-24:00 arc)
         "step_scale": 7.2,     # condense original 288-step plan: idx = step * 7.2
         "scenario_builder": build_hard_scenario,
         "grader_class": HardGrader,
         "description": "4-zone cascading chiller failure with carbon-aware triage",
         "hard_termination": True,
-        "hard_term_mode": "critical_breach",    # critical zone >32°C for 5+ steps → 0.0
+        "hard_term_mode": "critical_breach",    # critical zone >32C for 5+ steps -> 0.0
     },
 }
 
 
-# ── Environment ───────────────────────────────────────────────────────────────
+# -- Environment ---------------------------------------------------------------
 
 class DCEnvironment(Environment):
     """
-    OpenEnv-compliant Data Centre environment — V2.
+    OpenEnv-compliant Data Centre environment -- V2.
 
     Supports all three tasks via the TASK_CONFIGS registry.
-    Physics delegation → simulation.py
-    Scoring delegation → graders/
+    Physics delegation -> simulation.py
+    Scoring delegation -> graders/
     """
 
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
@@ -146,7 +146,7 @@ class DCEnvironment(Environment):
         # Timeline condensation scale factor (set properly in reset())
         self._step_scale: float = self.config.get("step_scale", 1.0)
 
-    # ── OpenEnv interface ──────────────────────────────────────────────────────
+    # -- OpenEnv interface ------------------------------------------------------
 
     def reset(self, seed: Optional[int] = None, episode_id: Optional[str] = None, **kwargs) -> DCObservation:
         """Reset the environment and return initial observation (OpenEnv interface: returns Observation directly)."""
@@ -158,7 +158,7 @@ class DCEnvironment(Environment):
         self._episode_rewards = []
         self._history.clear()
 
-        # Configure timeline condensation: each env step covers step_scale×5 sim minutes.
+        # Configure timeline condensation: each env step covers step_scalex5 sim minutes.
         # This drives the clock, load, carbon and sensor drift at the right rate so the
         # full scenario arc (4 / 12 / 24 hr) is covered within the reduced step budget.
         # Thermal physics keep their 5-min granularity (step_thermal uses SECONDS_PER_STEP).
@@ -194,7 +194,7 @@ class DCEnvironment(Environment):
         if self._facility is None:
             raise RuntimeError("Call reset() before step().")
 
-        # Convert Pydantic DCAction → simulation duck-type (rate-limiting compatible)
+        # Convert Pydantic DCAction -> simulation duck-type (rate-limiting compatible)
         sim_action = self._to_sim_action(action)
 
         # Advance simulation (rate-limiting + physics + time inside .step())
@@ -296,7 +296,7 @@ class DCEnvironment(Environment):
             "history_depth": len(self._history),
         }
 
-    # ── Streak tracking ────────────────────────────────────────────────────────
+    # -- Streak tracking --------------------------------------------------------
 
     def _update_streaks(self) -> bool:
         """
@@ -317,7 +317,7 @@ class DCEnvironment(Environment):
                 any_violation = True
         return any_violation
 
-    # ── Hard termination ───────────────────────────────────────────────────────
+    # -- Hard termination -------------------------------------------------------
 
     def _check_hard_termination(self):
         """
@@ -335,12 +335,12 @@ class DCEnvironment(Environment):
         mode = cfg.get("hard_term_mode", "")
 
         if mode == "violation_streak":
-            # Medium task: any zone unsafe for 10+ consecutive steps → terminate
+            # Medium task: any zone unsafe for 10+ consecutive steps -> terminate
             if self._sla_violation_streak >= MEDIUM_MAX_CONSECUTIVE_VIOLATIONS:
                 return True, 0.0
 
         elif mode == "critical_breach":
-            # Hard task: any critical zone > 32°C for 5+ consecutive steps → score = 0
+            # Hard task: any critical zone > 32C for 5+ consecutive steps -> score = 0
             for zone in self._facility.zones:
                 if zone.zone_priority < 2:   # only critical zones (priority == 2)
                     continue
@@ -353,7 +353,7 @@ class DCEnvironment(Environment):
 
         return False, 0.0
 
-    # ── History buffer ─────────────────────────────────────────────────────────
+    # -- History buffer ---------------------------------------------------------
 
     def _push_history_snapshot(self):
         """Append a compact per-zone snapshot to the rolling history buffer.
@@ -380,16 +380,16 @@ class DCEnvironment(Environment):
         self._history.append(snapshot)
 
     def _history_as_list(self) -> List[Dict[str, Any]]:
-        """Return history buffer as a list ordered oldest → newest (t-3, t-2, t-1)."""
+        """Return history buffer as a list ordered oldest -> newest (t-3, t-2, t-1)."""
         return list(self._history)
 
-    # ── Grader input construction ──────────────────────────────────────────────
+    # -- Grader input construction ----------------------------------------------
 
     def _build_grader_input(self, action: DCAction, step_info: Dict) -> Dict[str, Any]:
         """
         Assemble all data the grader needs for one step.
 
-        Graders are stateless between calls — they receive everything here.
+        Graders are stateless between calls -- they receive everything here.
         """
         f = self._facility
         return {
@@ -422,10 +422,10 @@ class DCEnvironment(Environment):
             "reasoning": action.reasoning,
         }
 
-    # ── Observation construction ───────────────────────────────────────────────
+    # -- Observation construction -----------------------------------------------
 
     def _make_observation(self) -> DCObservation:
-        """Convert FacilityState → DCObservation (V2 full schema)."""
+        """Convert FacilityState -> DCObservation (V2 full schema)."""
         f = self._facility
         raw = f.to_observation_dict()
 
@@ -479,11 +479,11 @@ class DCEnvironment(Environment):
             active_alerts=self._compute_active_alerts(),
         )
 
-    # ── Helper: chiller fault detection (observable) ───────────────────────────
+    # -- Helper: chiller fault detection (observable) ---------------------------
 
     def _chiller_fault_detected(self) -> bool:
         """
-        Returns True if the chiller COP has dropped below 60 % of its baseline —
+        Returns True if the chiller COP has dropped below 60 % of its baseline --
         an observable anomaly signal (not ground truth).
         """
         if not self._facility.chiller_active:
@@ -496,9 +496,9 @@ class DCEnvironment(Environment):
     def _chiller_fault_status(self) -> str:
         """
         Returns a human-readable chiller health label:
-          'nominal'   — chiller running normally
-          'degrading' — COP has dropped below 60 % of baseline; still provides cooling
-          'offline'   — chiller is fully failed; chiller_active=True in actions is ignored
+          'nominal'   -- chiller running normally
+          'degrading' -- COP has dropped below 60 % of baseline; still provides cooling
+          'offline'   -- chiller is fully failed; chiller_active=True in actions is ignored
         """
         if not self._facility.chiller_active:
             return "offline"
@@ -508,7 +508,7 @@ class DCEnvironment(Environment):
                 return "degrading"
         return "nominal"
 
-    # ── Helper: load curve phase ───────────────────────────────────────────────
+    # -- Helper: load curve phase -----------------------------------------------
 
     def _load_curve_phase(self) -> str:
         """
@@ -529,7 +529,7 @@ class DCEnvironment(Environment):
         else:
             return "idle"
 
-    # ── Alert generation (environment-level, not inference-script concern) ────
+    # -- Alert generation (environment-level, not inference-script concern) ----
 
     _SAFE_TEMP_MIN = 18.0
     _SAFE_TEMP_MAX = 27.0
@@ -546,12 +546,12 @@ class DCEnvironment(Environment):
         alerts: List[str] = []
         f = self._facility
 
-        # ── Chiller state ─────────────────────────────────────────────────────
+        # -- Chiller state -----------------------------------------------------
         fault_status = self._chiller_fault_status()
         if fault_status == "offline":
             alerts.append(
-                "CRITICAL: Chiller is OFFLINE — fans are the ONLY cooling available. "
-                "Set critical-zone fans to 90–100 % immediately. "
+                "CRITICAL: Chiller is OFFLINE -- fans are the ONLY cooling available. "
+                "Set critical-zone fans to 90-100 % immediately. "
                 "Setting chiller_active=true in your action will have NO effect."
             )
         elif fault_status == "degrading":
@@ -561,7 +561,7 @@ class DCEnvironment(Environment):
                 "Cooling capacity reduced. Ramp fans up now before chiller fails."
             )
 
-        # ── Per-zone alerts ───────────────────────────────────────────────────
+        # -- Per-zone alerts ---------------------------------------------------
         for z in f.zones:
             # Use observation-level temperature (faulty = reported, healthy = true)
             obs_temp = z.reported_temp_c if z.sensor_faulty else z.temp_c
@@ -571,23 +571,23 @@ class DCEnvironment(Environment):
             # Active temperature violations
             if obs_temp > self._SAFE_TEMP_MAX:
                 alerts.append(
-                    f"VIOLATION: {z.zone_id} OVERHEATING at {obs_temp:.1f} °C "
-                    f"(limit {self._SAFE_TEMP_MAX} °C). Immediate max cooling required."
+                    f"VIOLATION: {z.zone_id} OVERHEATING at {obs_temp:.1f} C "
+                    f"(limit {self._SAFE_TEMP_MAX} C). Immediate max cooling required."
                 )
             elif obs_temp < self._SAFE_TEMP_MIN:
                 alerts.append(
-                    f"VIOLATION: {z.zone_id} OVERCOOLING at {obs_temp:.1f} °C "
-                    f"(floor {self._SAFE_TEMP_MIN} °C). Raise supply setpoint +2 °C, cut fan 15–20 %."
+                    f"VIOLATION: {z.zone_id} OVERCOOLING at {obs_temp:.1f} C "
+                    f"(floor {self._SAFE_TEMP_MIN} C). Raise supply setpoint +2 C, cut fan 15-20 %."
                 )
             # Near-boundary warnings
             elif self._SAFE_TEMP_MAX - 1.0 < obs_temp <= self._SAFE_TEMP_MAX:
                 alerts.append(
-                    f"WARNING: {z.zone_id} at {obs_temp:.1f} °C — within 1 °C of "
+                    f"WARNING: {z.zone_id} at {obs_temp:.1f} C -- within 1 C of "
                     f"violation limit. Increase cooling now."
                 )
             elif self._SAFE_TEMP_MIN <= obs_temp < self._SAFE_TEMP_MIN + 1.0:
                 alerts.append(
-                    f"WARNING: {z.zone_id} at {obs_temp:.1f} °C — within 1 °C of "
+                    f"WARNING: {z.zone_id} at {obs_temp:.1f} C -- within 1 C of "
                     "overcooling floor. Reduce fan or raise supply setpoint."
                 )
 
@@ -596,7 +596,7 @@ class DCEnvironment(Environment):
                 bias = round(z.reported_temp_c - z.temp_c, 1)
                 alerts.append(
                     f"SENSOR FAULT: {z.zone_id} sensor_confidence={conf:.2f}. "
-                    f"Cold-aisle reading may be off by ~{abs(bias):.1f} °C. "
+                    f"Cold-aisle reading may be off by ~{abs(bias):.1f} C. "
                     "Cross-check with hot_aisle_temp_c and supply_air_temp_c "
                     "to estimate true thermal state."
                 )
@@ -612,18 +612,18 @@ class DCEnvironment(Environment):
                     and fan > 70.0
                 ):
                     alerts.append(
-                        f"EFFICIENCY: {z.zone_id} stable at {obs_temp:.1f} °C with fan "
-                        f"at {fan:.0f} % — reduce to 45–65 % to improve PUE."
+                        f"EFFICIENCY: {z.zone_id} stable at {obs_temp:.1f} C with fan "
+                        f"at {fan:.0f} % -- reduce to 45-65 % to improve PUE."
                     )
 
-        # ── Carbon ────────────────────────────────────────────────────────────
+        # -- Carbon ------------------------------------------------------------
         if f.grid_carbon_intensity_normalized > 0.80:
             alerts.append(
                 f"CARBON CRITICAL ({f.grid_carbon_intensity_normalized:.2f}): Grid at "
-                "peak emissions. Reduce fan speeds on safe zones — every % counts."
+                "peak emissions. Reduce fan speeds on safe zones -- every % counts."
             )
 
-        # ── SLA streak ────────────────────────────────────────────────────────
+        # -- SLA streak --------------------------------------------------------
         if self._sla_violation_streak >= 5:
             alerts.append(
                 f"SLA ALERT: {self._sla_violation_streak} consecutive violation steps. "
@@ -632,7 +632,7 @@ class DCEnvironment(Environment):
 
         return alerts
 
-    # ── Helper: load forecast ──────────────────────────────────────────────────
+    # -- Helper: load forecast --------------------------------------------------
 
     def _forecast_load(self, zone_id: str) -> float:
         """
@@ -653,10 +653,10 @@ class DCEnvironment(Environment):
         future_normalised = f.load_curve[future_idx]
         return round(zone.base_it_load_kw * future_normalised, 1)
 
-    # ── Action conversion ──────────────────────────────────────────────────────
+    # -- Action conversion ------------------------------------------------------
 
     def _to_sim_action(self, action: DCAction) -> SimDCAction:
-        """Convert Pydantic DCAction → simulation duck-type SimDCAction."""
+        """Convert Pydantic DCAction -> simulation duck-type SimDCAction."""
         sim_adjustments = [
             SimZoneAdjustment(
                 zone_id=adj.zone_id,

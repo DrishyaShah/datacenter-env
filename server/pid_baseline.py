@@ -10,7 +10,7 @@ class PIDBaseline:
     """
     Rule-based baseline controller for PUE benchmarking.
     Sets fan speed proportional to temperature deviation from setpoint.
-    Sets chiller to fixed setpoint of 10°C.
+    Sets chiller to fixed setpoint of 10C.
     This is what the agent's PUE is measured against.
     """
     def act(self, obs: DCObservation) -> DCAction:

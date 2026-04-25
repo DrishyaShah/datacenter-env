@@ -19,7 +19,7 @@ from server.cluster_environment import ClusterEnvironment
 from server.agents.baseline_scheduler import priority_weighted_threshold, accept_all, reject_all
 
 
-# ── Unit tests ────────────────────────────────────────────────────────────────
+# -- Unit tests ----------------------------------------------------------------
 
 
 def test_env_reset_returns_window_state():
@@ -57,7 +57,7 @@ def test_accept_all_causes_power_violations():
 
     ir = env._grader.incident_rate()
     assert ir > 0.3, (
-        f"accept_all incident rate {ir:.0%} too low — "
+        f"accept_all incident rate {ir:.0%} too low -- "
         "peak load may not exceed 900 kW budget; increase Team B baseline in cluster_scenario.py"
     )
 
@@ -87,7 +87,7 @@ def test_oversight_flags_appear_for_team_b():
 
     team_b_flags = [f for f in all_flags if f.team_id == "team_b"]
     assert len(team_b_flags) > 0, (
-        "No Team B oversight flags detected — check OversightMonitor wiring "
+        "No Team B oversight flags detected -- check OversightMonitor wiring "
         "in ClusterEnvironment.step()"
     )
 
@@ -103,16 +103,16 @@ def test_reward_bounds():
         assert -0.35 - 1e-6 <= reward <= 0.65 + 1e-6, f"reward {reward:.4f} out of bounds"
 
 
-# ── Calibration gate ──────────────────────────────────────────────────────────
+# -- Calibration gate ----------------------------------------------------------
 
 
 def run_calibration_gate(n_episodes: int = 10) -> dict:
     """
     Calibration gate: characterise all three scheduler tiers across N episodes.
 
-    Tier 1 — accept_all:               incidents high (budget always blown)
-    Tier 2 — priority_weighted_threshold: safe (0% incidents) but suboptimal score
-    Tier 3 — trained LLM target:         safe + high throughput + high carbon deferral
+    Tier 1 -- accept_all:               incidents high (budget always blown)
+    Tier 2 -- priority_weighted_threshold: safe (0% incidents) but suboptimal score
+    Tier 3 -- trained LLM target:         safe + high throughput + high carbon deferral
 
     The training objective is to beat Tier 2 in total score, not just incidents.
     Returns a dict of per-tier metrics.
@@ -161,11 +161,11 @@ def run_calibration_gate(n_episodes: int = 10) -> dict:
 
     # Gate: accept_all must cause incidents, baseline must be positive
     assert naive["incident_rate"] > 0.3, (
-        f"accept_all incident rate {naive['incident_rate']:.0%} too low — "
+        f"accept_all incident rate {naive['incident_rate']:.0%} too low -- "
         "scenario load doesn't exceed 900 kW budget; increase Team B baseline."
     )
     assert bline["score"] > 0.0, (
-        f"priority_weighted_threshold score {bline['score']:+.4f} is not positive — "
+        f"priority_weighted_threshold score {bline['score']:+.4f} is not positive -- "
         "the baseline is too conservative or throughput is broken."
     )
 
@@ -211,4 +211,4 @@ if __name__ == "__main__":
         except AssertionError as e:
             print(f"\nCALIBRATION GATE: FAIL  {e}")
     else:
-        print("Skipping calibration gate — fix unit test failures first.")
+        print("Skipping calibration gate -- fix unit test failures first.")

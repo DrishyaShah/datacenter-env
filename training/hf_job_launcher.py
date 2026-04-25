@@ -30,7 +30,7 @@ def run(cmd: list, **kwargs) -> None:
     subprocess.run(cmd, check=True, **kwargs)
 
 
-# 1. Install git-lfs — PPO model zip (~500KB) is tracked via Git LFS
+# 1. Install git-lfs -- PPO model zip (~500KB) is tracked via Git LFS
 run(["apt-get", "update", "-qq"])
 run(["apt-get", "install", "-y", "git-lfs"])
 run(["git", "lfs", "install"])
@@ -45,10 +45,10 @@ zip_path = "training/cooling_controller_best/best_model.zip"
 size = os.path.getsize(zip_path)
 print(f"PPO zip size: {size:,} bytes", flush=True)
 if size < 10_000:
-    print("LFS pointer detected — pulling full object...", flush=True)
+    print("LFS pointer detected -- pulling full object...", flush=True)
     run(["git", "lfs", "pull"])
     size = os.path.getsize(zip_path)
-    assert size > 10_000, f"git lfs pull failed — zip still a pointer ({size} B)"
+    assert size > 10_000, f"git lfs pull failed -- zip still a pointer ({size} B)"
 
 # 4. Install unsloth first (must come before transformers to avoid version conflict)
 run(["uv", "pip", "install", "--quiet",
@@ -57,12 +57,12 @@ run(["uv", "pip", "install", "--quiet",
 # 5. Install remaining deps (torch, transformers, sb3, matplotlib, etc.)
 run(["uv", "pip", "install", "--quiet", "-r", "requirements.txt"])
 
-# 6. Smoke test — fail fast before spending GPU time
+# 6. Smoke test -- fail fast before spending GPU time
 run([sys.executable, "-c",
      "from unsloth import FastLanguageModel; "
      "from server.agents.ppo_cooling_controller import PPOCoolingController; "
      "from training.rollout import collect_rollouts; "
      "print('Smoke test: OK')"])
 
-# 7. Run training — N_ITERATIONS env var is forwarded automatically by HF Jobs
+# 7. Run training -- N_ITERATIONS env var is forwarded automatically by HF Jobs
 run([sys.executable, "training/train_grpo.py"])

@@ -27,16 +27,16 @@ from server.simulation import (
 )
 
 
-# ── Temperature thresholds ────────────────────────────────────────────────────
-# Tuned for the 4-zone cluster scenario starting at 21.5–23.5°C.
-# The proportional bands ensure the heuristic responds before hitting 27°C limit.
+# -- Temperature thresholds ----------------------------------------------------
+# Tuned for the 4-zone cluster scenario starting at 21.5-23.5C.
+# The proportional bands ensure the heuristic responds before hitting 27C limit.
 
-TEMP_AGGRESSIVE   = 26.0    # °C — ramp fans hard, drop setpoint aggressively
-TEMP_WARM         = 24.5    # °C — moderate increase
-TEMP_WATCH        = 23.0    # °C — gentle push
-TEMP_NOMINAL_HIGH = 22.0    # °C — upper edge of hold band
-TEMP_NOMINAL_LOW  = 20.5    # °C — lower edge of hold band; below = overcooling
-TEMP_COLD         = 19.5    # °C — back off more aggressively
+TEMP_AGGRESSIVE   = 26.0    # C -- ramp fans hard, drop setpoint aggressively
+TEMP_WARM         = 24.5    # C -- moderate increase
+TEMP_WATCH        = 23.0    # C -- gentle push
+TEMP_NOMINAL_HIGH = 22.0    # C -- upper edge of hold band
+TEMP_NOMINAL_LOW  = 20.5    # C -- lower edge of hold band; below = overcooling
+TEMP_COLD         = 19.5    # C -- back off more aggressively
 
 # Fan speed limits (%)
 FAN_MAX    = 100.0
@@ -44,7 +44,7 @@ FAN_HIGH   = 90.0
 FAN_HOLD   = 80.0
 FAN_MIN    = 30.0    # never fully off; minimum for air circulation
 
-# Supply temperature limits (°C) — must stay within [16, 26]
+# Supply temperature limits (C) -- must stay within [16, 26]
 SUPPLY_MIN = 16.0
 SUPPLY_MAX = 24.0
 
@@ -53,7 +53,7 @@ class CoolingHeuristic:
     """
     Proportional rule-based cooling controller.
 
-    Stateless with respect to action history — the ClusterEnvironment tracks
+    Stateless with respect to action history -- the ClusterEnvironment tracks
     the previous action for passing to FacilityState.step() as last_action
     (needed by apply_action_with_rate_limiting).
 
@@ -86,19 +86,19 @@ class CoolingHeuristic:
             chiller_active     = facility.chiller_active,  # respect existing state
         )
 
-    # ── Zone-level logic ──────────────────────────────────────────────────────
+    # -- Zone-level logic ------------------------------------------------------
 
     def _zone_action(self, zone: ZoneState) -> tuple[float, float]:
         """
         Compute (fan_speed_pct, supply_air_temp_setpoint_c) for one zone.
 
         Temperature bands:
-          > TEMP_AGGRESSIVE (26°C): emergency — max fans, coldest supply
-          > TEMP_WARM       (24.5°C): warm — strong increase
-          > TEMP_WATCH      (23°C): watch — gentle push
-          hold band         (20.5–22°C): maintain current settings
-          < TEMP_NOMINAL_LOW(20.5°C): overcooling — back off
-          < TEMP_COLD       (19.5°C): too cold — reduce fans meaningfully
+          > TEMP_AGGRESSIVE (26C): emergency -- max fans, coldest supply
+          > TEMP_WARM       (24.5C): warm -- strong increase
+          > TEMP_WATCH      (23C): watch -- gentle push
+          hold band         (20.5-22C): maintain current settings
+          < TEMP_NOMINAL_LOW(20.5C): overcooling -- back off
+          < TEMP_COLD       (19.5C): too cold -- reduce fans meaningfully
         """
         temp    = zone.temp_c
         fan     = zone.fan_speed_pct
@@ -129,11 +129,11 @@ class CoolingHeuristic:
             fan      = max(FAN_MIN + 10.0, fan - 5.0)
             setpoint = min(SUPPLY_MAX - 1.0, setpoint + 0.6)
 
-        # else: temp in nominal hold band [20.5–22°C] — maintain current settings
+        # else: temp in nominal hold band [20.5-22C] -- maintain current settings
 
         return round(fan, 1), round(setpoint, 1)
 
-    # ── Facility-level logic ──────────────────────────────────────────────────
+    # -- Facility-level logic --------------------------------------------------
 
     def _chiller_setpoint(self, facility: FacilityState) -> float:
         """
@@ -147,15 +147,15 @@ class CoolingHeuristic:
         avg_temp = sum(z.temp_c for z in facility.zones) / len(facility.zones)
 
         if avg_temp > 25.5:
-            return 7.0    # aggressive — sacrifice COP for cooling
+            return 7.0    # aggressive -- sacrifice COP for cooling
         elif avg_temp > 24.0:
-            return 8.5    # warm — moderate chilling
+            return 8.5    # warm -- moderate chilling
         elif avg_temp > 22.5:
-            return 10.0   # nominal — good COP
+            return 10.0   # nominal -- good COP
         else:
-            return 11.0   # comfortable — maximise COP
+            return 11.0   # comfortable -- maximise COP
 
-    # ── Factory for initial action ────────────────────────────────────────────
+    # -- Factory for initial action --------------------------------------------
 
     @staticmethod
     def initial_action(zones: list[ZoneState]) -> _DCActionStub:

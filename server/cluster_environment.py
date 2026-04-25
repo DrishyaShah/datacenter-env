@@ -1,9 +1,9 @@
 """
-ClusterEnvironment — 8-window AI cluster scheduling environment.
+ClusterEnvironment -- 8-window AI cluster scheduling environment.
 
-Episode structure: 8 negotiation windows × 18 physical steps = 144 total steps.
-Each window: scheduler issues admission decisions → cooling runs 18 physics steps →
-window metrics recorded → next window observation returned.
+Episode structure: 8 negotiation windows x 18 physical steps = 144 total steps.
+Each window: scheduler issues admission decisions -> cooling runs 18 physics steps ->
+window metrics recorded -> next window observation returned.
 
 Interface:
     env = ClusterEnvironment(cooling_controller=None, enable_chiller_fault=True)
@@ -55,8 +55,8 @@ class ClusterEnvironment:
     """
     Gym-style environment for the ClusterEnv scheduling task.
 
-    reset() → WindowState (window 0 observation)
-    step(decisions) → (WindowState, reward, done, info)
+    reset() -> WindowState (window 0 observation)
+    step(decisions) -> (WindowState, reward, done, info)
 
     cooling_controller: any object implementing
         step(facility, upcoming_load_kw=None) -> _DCActionStub
@@ -97,7 +97,7 @@ class ClusterEnvironment:
         self._pending_flags: list[OversightFlag] = []
         self._oversight_monitor: OversightMonitor = OversightMonitor()
 
-    # ── Public interface ──────────────────────────────────────────────────────
+    # -- Public interface ------------------------------------------------------
 
     def reset(self, seed: int | None = None) -> WindowState:
         """Reset episode. Returns window-0 WindowState."""
@@ -144,14 +144,14 @@ class ClusterEnvironment:
         if self._facility is None:
             raise RuntimeError("Call reset() before step().")
 
-        # ── Phase 1: Admission control ────────────────────────────────────────
+        # -- Phase 1: Admission control ----------------------------------------
         jobs_admitted            = 0
         carbon_flexible_admitted = 0
 
         for dec in decisions:
             req = self._request_index.get(dec.request_id)
             if req is None:
-                continue  # unknown id — LLM hallucinated; skip silently
+                continue  # unknown id -- LLM hallucinated; skip silently
 
             if dec.decision == "ACCEPT":
                 if not self._chargeback.can_afford(req):
@@ -189,7 +189,7 @@ class ClusterEnvironment:
             else:  # REJECT
                 self._team_history[req.team_id].total_rejected += 1
 
-        # ── Phase 2: Physical simulation ──────────────────────────────────────
+        # -- Phase 2: Physical simulation --------------------------------------
         load_map: dict[str, float] = {}
         for job in self._ledger.active_jobs:
             load_map[job.zone_id] = (
@@ -209,7 +209,7 @@ class ClusterEnvironment:
             if power_budget_violated(self._facility):
                 power_violated = True
 
-        # ── Phase 3: Window completion metrics ────────────────────────────────
+        # -- Phase 3: Window completion metrics --------------------------------
         carbon = CARBON_SCHEDULE[self._window_idx]
         self._ledger.expire_finished_jobs(self._window_idx, carbon)
 
@@ -254,7 +254,7 @@ class ClusterEnvironment:
                 th.oversight_flags_received += 1
                 th.last_flag_window = self._window_idx
 
-        # ── Phase 4: Advance window ───────────────────────────────────────────
+        # -- Phase 4: Advance window -------------------------------------------
         self._window_idx += 1
         done = self._window_idx >= WINDOWS_PER_EPISODE
 
@@ -289,7 +289,7 @@ class ClusterEnvironment:
 
         return self._build_window_state(), reward, done, info
 
-    # ── Private helpers ───────────────────────────────────────────────────────
+    # -- Private helpers -------------------------------------------------------
 
     def _generate_window_requests(
         self, window_idx: int, carbon: str

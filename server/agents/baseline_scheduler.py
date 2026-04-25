@@ -2,20 +2,20 @@
 Priority-weighted threshold baseline scheduler for ClusterEnv.
 
 This is the BASELINE policy that the GRPO-trained operator is compared against.
-It is deterministic, reproducible, and reasonably sensible — representing what
+It is deterministic, reproducible, and reasonably sensible -- representing what
 a naive IT admin would implement without any learning.
 
 Baseline behaviour (and its known failure modes):
   1. Sorts all pending requests by stated_priority (CRITICAL first).
-  2. Accepts each in order if current_load + request.estimated_kw ≤ 85% capacity.
+  2. Accepts each in order if current_load + request.estimated_kw  85% capacity.
   3. Defers anything that doesn't fit to the next window.
-  4. Never permanently rejects — always defers.
-  5. Ignores carbon intensity — admits whenever capacity allows.
-  6. Takes stated_priority at face value — gets fooled by Team B's inflation every time.
+  4. Never permanently rejects -- always defers.
+  5. Ignores carbon intensity -- admits whenever capacity allows.
+  6. Takes stated_priority at face value -- gets fooled by Team B's inflation every time.
   7. Ignores oversight flags entirely.
 
 Expected baseline metrics (verified by calibration gate):
-  - Thermal incident rate: 0.40–0.65 during peak windows
+  - Thermal incident rate: 0.40-0.65 during peak windows
   - Carbon deferral rate: ~0.04 (accidental, not intentional)
   - Throughput: ~0.41
 
@@ -31,9 +31,9 @@ from server.economic import WindowState, AdmissionDecision
 from server.economic.job_request import PRIORITY_ORDER
 
 
-# ── Capacity safety margin ────────────────────────────────────────────────────
+# -- Capacity safety margin ----------------------------------------------------
 # The baseline accepts up to this fraction of headroom.
-# 0.85 = 85% of remaining capacity — leaves 15% buffer.
+# 0.85 = 85% of remaining capacity -- leaves 15% buffer.
 # This prevents the most obvious overloads but misses the subtle ones
 # (e.g. multiple 280 kW jobs each under threshold but combined over budget).
 
@@ -53,13 +53,13 @@ def priority_weighted_threshold(window_state: WindowState) -> list[AdmissionDeci
     -------
     list[AdmissionDecision]
         One decision per pending request (new + deferred).
-        All requests are either ACCEPT or DEFER — never REJECT.
+        All requests are either ACCEPT or DEFER -- never REJECT.
     """
     decisions:  list[AdmissionDecision] = []
     remaining_kw = window_state.capacity_headroom_kw
 
     # Sort by stated_priority descending (CRITICAL=3 first, LOW=0 last).
-    # Team B's fake CRITICAL claims go to the front — this is the failure mode.
+    # Team B's fake CRITICAL claims go to the front -- this is the failure mode.
     sorted_requests = sorted(
         window_state.all_pending,
         key=lambda r: PRIORITY_ORDER.get(r.stated_priority, 0),
@@ -94,7 +94,7 @@ def priority_weighted_threshold(window_state: WindowState) -> list[AdmissionDeci
 
 def reject_all(window_state: WindowState) -> list[AdmissionDecision]:
     """
-    Reject every request — used to verify thermal incidents don't occur at zero load.
+    Reject every request -- used to verify thermal incidents don't occur at zero load.
     """
     next_window = min(window_state.window_idx + 1, window_state.total_windows - 1)
     return [
@@ -105,7 +105,7 @@ def reject_all(window_state: WindowState) -> list[AdmissionDecision]:
 
 def accept_all(window_state: WindowState) -> list[AdmissionDecision]:
     """
-    Accept every request regardless of capacity — used to verify
+    Accept every request regardless of capacity -- used to verify
     thermal incidents DO occur at max load (upper bound of incident rate).
     """
     return [

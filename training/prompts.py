@@ -5,7 +5,7 @@ Single public function:
     build_prompt(window_state: WindowState) -> str
 
 Converts a WindowState into the text the LLM scheduler reads each negotiation
-window. All fields are sourced exclusively from WindowState — no FacilityState
+window. All fields are sourced exclusively from WindowState -- no FacilityState
 or ChargebackLedger objects are passed in. The LLM then outputs a JSON block
 that rollout.py parses into list[AdmissionDecision].
 
@@ -13,7 +13,7 @@ Prompt quality is the primary determinant of GRPO training signal quality.
 Every field that matters for a correct scheduling decision must appear, clearly
 labelled, in a consistent position the model can learn to locate.
 
-JSON output schema is at the bottom of every prompt — unambiguous, no markdown
+JSON output schema is at the bottom of every prompt -- unambiguous, no markdown
 fences, no trailing text. Format errors in the LLM's response trigger a -0.5
 reward penalty in rollout.py, so the schema must be impossible to misread.
 """
@@ -29,12 +29,12 @@ from server.economic.chargeback import (
 )
 
 
-# ── Display constants ─────────────────────────────────────────────────────────
+# -- Display constants ---------------------------------------------------------
 
 _ZONE_LABEL: dict[str, str] = {
-    "green":  "GREEN  [OK]  (<23°C, safe)",
-    "yellow": "YELLOW [!]   (23-25°C, warming)",
-    "red":    "RED    [!!]  (>=25°C, near limit)",
+    "green":  "GREEN  [OK]  (<23C, safe)",
+    "yellow": "YELLOW [!]   (23-25C, warming)",
+    "red":    "RED    [!!]  (>=25C, near limit)",
 }
 
 _CARBON_LABEL: dict[str, str] = {
@@ -47,7 +47,7 @@ _CARBON_LABEL: dict[str, str] = {
 _DIV = "-" * 72
 
 
-# ── Private helpers ───────────────────────────────────────────────────────────
+# -- Private helpers -----------------------------------------------------------
 
 
 def _budget_str(remaining: float) -> str:
@@ -92,7 +92,7 @@ def _format_job(req: JobRequest, deferred: bool = False) -> str:
     )
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
+# -- Public API ----------------------------------------------------------------
 
 
 def build_prompt(window_state: WindowState) -> str:
@@ -104,7 +104,7 @@ def build_prompt(window_state: WindowState) -> str:
     window_state : WindowState
         Current window's complete public observation. All private fields
         (true_priority, true_deadline_window, true_carbon_flexible) are
-        absent — they live only in EpisodeLedger and are never passed here.
+        absent -- they live only in EpisodeLedger and are never passed here.
 
     Returns
     -------
@@ -116,14 +116,14 @@ def build_prompt(window_state: WindowState) -> str:
     w  = ws.window_idx
     lines: list[str] = []
 
-    # ── Header ────────────────────────────────────────────────────────────────
+    # -- Header ----------------------------------------------------------------
     lines.append(
         f"=== AI CLUSTER SCHEDULER | WINDOW {w + 1}/{ws.total_windows}"
         f" | {ws.sim_timestamp} ==="
     )
     lines.append("")
 
-    # ── Grid / carbon ─────────────────────────────────────────────────────────
+    # -- Grid / carbon ---------------------------------------------------------
     intensity_display = _CARBON_LABEL.get(
         ws.carbon_intensity, ws.carbon_intensity.upper()
     )
@@ -132,7 +132,7 @@ def build_prompt(window_state: WindowState) -> str:
     lines.append(f"      Forecast: {forecast_display}")
     lines.append("")
 
-    # ── Thermal status ────────────────────────────────────────────────────────
+    # -- Thermal status --------------------------------------------------------
     lines.append("THERMAL STATUS:")
     if ws.thermal_summary:
         for zone_id, status in ws.thermal_summary.items():
@@ -142,7 +142,7 @@ def build_prompt(window_state: WindowState) -> str:
         lines.append("  (no zone data)")
     lines.append("")
 
-    # ── Capacity ──────────────────────────────────────────────────────────────
+    # -- Capacity --------------------------------------------------------------
     lines.append(f"CAPACITY: {ws.capacity_headroom_kw:.0f} kW available")
     if ws.oversubscribed_if_all_accepted:
         lines.append(
@@ -151,7 +151,7 @@ def build_prompt(window_state: WindowState) -> str:
         )
     lines.append("")
 
-    # ── Pending requests ──────────────────────────────────────────────────────
+    # -- Pending requests ------------------------------------------------------
     lines.append(_DIV)
     lines.append("PENDING REQUESTS (new submissions this window)")
     lines.append(_DIV)
@@ -163,7 +163,7 @@ def build_prompt(window_state: WindowState) -> str:
         lines.append("  (none)")
         lines.append("")
 
-    # ── Deferred requests ─────────────────────────────────────────────────────
+    # -- Deferred requests -----------------------------------------------------
     lines.append(_DIV)
     lines.append("DEFERRED FROM PREVIOUS WINDOWS")
     lines.append(_DIV)
@@ -175,7 +175,7 @@ def build_prompt(window_state: WindowState) -> str:
         lines.append("  (none)")
         lines.append("")
 
-    # ── Team history ──────────────────────────────────────────────────────────
+    # -- Team history ----------------------------------------------------------
     lines.append(_DIV)
     lines.append("TEAM HISTORY")
     lines.append(_DIV)
@@ -190,12 +190,12 @@ def build_prompt(window_state: WindowState) -> str:
         lines.append(f"  History: {hist_str}")
         lines.append("")
 
-    # ── Oversight flags ───────────────────────────────────────────────────────
+    # -- Oversight flags -------------------------------------------------------
     prev_window = w - 1
     lines.append(_DIV)
     lines.append(
         f"OVERSIGHT FLAGS"
-        + (f" (detected in window {prev_window})" if prev_window >= 0 else " (window 0 — no prior data)")
+        + (f" (detected in window {prev_window})" if prev_window >= 0 else " (window 0 -- no prior data)")
     )
     lines.append(_DIV)
     if ws.oversight_flags:
@@ -205,7 +205,7 @@ def build_prompt(window_state: WindowState) -> str:
         lines.append("  [NONE]")
     lines.append("")
 
-    # ── Decision instructions + JSON schema ───────────────────────────────────
+    # -- Decision instructions + JSON schema -----------------------------------
     lines.append(_DIV)
     lines.append("YOUR DECISION")
     lines.append(_DIV)
@@ -213,14 +213,14 @@ def build_prompt(window_state: WindowState) -> str:
         "Decide for EVERY request listed above (pending + deferred): ACCEPT, DEFER, or REJECT."
     )
     lines.append("")
-    lines.append("  ACCEPT  — admit now; job starts this window, power drawn immediately")
-    lines.append("  DEFER   — schedule for a later window; you MUST specify scheduled_window")
-    lines.append("  REJECT  — permanently decline; job is dropped")
+    lines.append("  ACCEPT  -- admit now; job starts this window, power drawn immediately")
+    lines.append("  DEFER   -- schedule for a later window; you MUST specify scheduled_window")
+    lines.append("  REJECT  -- permanently decline; job is dropped")
     lines.append("")
     lines.append("Optimise for:")
-    lines.append("  1. Job throughput  — complete jobs before their true deadlines")
-    lines.append("  2. Power safety    — total admitted load must stay within 900 kW budget")
-    lines.append("  3. Carbon efficiency — defer flexible jobs to low-carbon windows")
+    lines.append("  1. Job throughput  -- complete jobs before their true deadlines")
+    lines.append("  2. Power safety    -- total admitted load must stay within 900 kW budget")
+    lines.append("  3. Carbon efficiency -- defer flexible jobs to low-carbon windows")
     lines.append("")
     lines.append(
         "Use team history and oversight flags to detect gaming. "
@@ -228,7 +228,7 @@ def build_prompt(window_state: WindowState) -> str:
     )
     lines.append("")
     lines.append(
-        "Output ONLY valid JSON — no markdown fences, no prose before or after:"
+        "Output ONLY valid JSON -- no markdown fences, no prose before or after:"
     )
     lines.append('{')
     lines.append('  "decisions": [')
