@@ -19,6 +19,13 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
+
+# Suppress noisy-but-harmless transformer/unsloth warnings before any imports
+warnings.filterwarnings("ignore", message=".*max_new_tokens.*max_length.*")
+warnings.filterwarnings("ignore", message=".*use_return_dict.*")
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning, message=".*Unsloth.*")
 
 import numpy as np
 import torch
@@ -97,15 +104,17 @@ def make_generate_fn(model, tokenizer, temperature: float = TEMPERATURE,
     def generate_fn(prompt: str) -> str:
         FastLanguageModel.for_inference(model)
         inputs = tokenizer(
-            prompt, return_tensors="pt", add_special_tokens=False
+            prompt, return_tensors="pt", add_special_tokens=False,
+            truncation=True, max_length=MAX_SEQ_LENGTH,
         ).to(model.device)
         with torch.no_grad():
             out = model.generate(
                 **inputs,
-                max_new_tokens = max_new_tokens,
-                temperature    = temperature,
-                do_sample      = True,
-                pad_token_id   = tokenizer.eos_token_id,
+                max_new_tokens  = max_new_tokens,
+                temperature     = temperature,
+                do_sample       = True,
+                pad_token_id    = tokenizer.eos_token_id,
+                max_length      = inputs["input_ids"].shape[1] + max_new_tokens,
             )
         prompt_len = inputs["input_ids"].shape[1]
         return tokenizer.decode(out[0][prompt_len:], skip_special_tokens=True)
@@ -156,6 +165,43 @@ def compute_log_prob(
     return comp_lp.sum()
 
 
+# ── Plot helper ───────────────────────────────────────────────────────────────
+
+
+def _save_training_plots(rewards: list[float], losses: list[float]) -> None:
+    """Save reward and loss curves as PNG files committed to the repo."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        iters = list(range(1, len(rewards) + 1))
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+        ax1.plot(iters, rewards, color="#2196F3", linewidth=2, marker="o", markersize=4)
+        ax1.axhline(0.28, color="gray", linestyle="--", linewidth=1,
+                    label="rule-based baseline (+0.28)")
+        ax1.set_xlabel("Iteration")
+        ax1.set_ylabel("Mean episode reward")
+        ax1.set_title("GRPO Reward Curve — ClusterEnv Scheduler")
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        ax2.plot(iters, losses, color="#F44336", linewidth=2, marker="o", markersize=4)
+        ax2.set_xlabel("Iteration")
+        ax2.set_ylabel("GRPO loss")
+        ax2.set_title("GRPO Loss Curve — ClusterEnv Scheduler")
+        ax2.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        out_path = os.path.join(ROOT, "training", "grpo_training_curves.png")
+        plt.savefig(out_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  Training curves saved -> {out_path}")
+    except Exception as e:
+        print(f"  Could not save plots: {e}")
+
+
 # ── Training loop ─────────────────────────────────────────────────────────────
 
 
@@ -186,6 +232,9 @@ def main() -> None:
         lr = LEARNING_RATE,
     )
     os.makedirs(ADAPTER_DIR, exist_ok=True)
+
+    reward_log: list[float] = []
+    loss_log:   list[float] = []
 
     # ── Main loop ─────────────────────────────────────────────────────────────
     for iteration in range(N_ITERATIONS):
@@ -238,6 +287,9 @@ def main() -> None:
             f"parse_fail={parse_fails}/{len(rollouts)}"
         )
 
+        reward_log.append(mean_reward)
+        loss_log.append(total_loss)
+
         # Sample completion preview (first 3 iterations only)
         if iteration < 3:
             preview = rollouts[0]["completion"].replace("\n", " ")[:120]
@@ -264,6 +316,9 @@ def main() -> None:
         model.push_to_hub(hf_repo, commit_message="final")
         tokenizer.push_to_hub(hf_repo)
         print(f"  Final adapter pushed to Hub -> {hf_repo}")
+    # ── Save training curves as PNG (required by submission checklist) ────────
+    _save_training_plots(reward_log, loss_log)
+
     print()
     print(f"Training complete. Final adapter -> {final_path}")
     print()

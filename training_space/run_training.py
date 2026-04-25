@@ -46,7 +46,31 @@ def _health_server():
         httpd.serve_forever()
 
 
+def _download_ppo_model() -> None:
+    """
+    Download the PPO cooling controller from HF Hub if not present locally.
+    The file is too large to ship via git (binary), so we pull it at runtime.
+    """
+    dest = "/app/training/cooling_controller_best/best_model.zip"
+    if os.path.exists(dest):
+        print(f"PPO model already present at {dest}")
+        return
+    try:
+        from huggingface_hub import hf_hub_download
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        hf_hub_download(
+            repo_id   = "Mephisto2412/clusterenv-ppo-cooling",
+            filename  = "best_model.zip",
+            local_dir = "/app/training/cooling_controller_best",
+        )
+        print("PPO cooling model downloaded from HF Hub.")
+    except Exception as e:
+        print(f"PPO model download failed ({e}). CoolingHeuristic fallback will be used.")
+
+
 def _run_training():
+    _status["state"] = "downloading PPO model"
+    _download_ppo_model()
     _status["state"] = "training"
     try:
         from training.train_grpo import main
