@@ -31,6 +31,7 @@ def run(cmd: list, **kwargs) -> None:
 
 
 # 1. Install git-lfs — PPO model zip (~500KB) is tracked via Git LFS
+run(["apt-get", "update", "-qq"])
 run(["apt-get", "install", "-y", "git-lfs"])
 run(["git", "lfs", "install"])
 
