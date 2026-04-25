@@ -1,0 +1,1552 @@
+{
+  "meta": {
+    "scheduler": "priority_weighted_threshold",
+    "seed": 42,
+    "generated_at": "2026-04-25T19:20:05",
+    "final_score": 0.125,
+    "incident_rate": 0.0,
+    "mean_throughput": 0.25,
+    "mean_carbon_deferral": 0.0
+  },
+  "windows": [
+    {
+      "window_idx": 0,
+      "sim_timestamp": "08:00",
+      "carbon_intensity": "low",
+      "thermal_summary": {
+        "zone_team_a_1": "yellow",
+        "zone_team_a_2": "yellow",
+        "zone_team_b_1": "yellow",
+        "zone_shared": "green"
+      },
+      "capacity_headroom_kw": 620.0,
+      "pending_requests": [
+        {
+          "request_id": "req_0_team_a_0",
+          "team_id": "team_a",
+          "job_type": "evaluation",
+          "job_description": "Model evaluation: MMLU, HellaSwag, TruthfulQA benchmarks \u2014 results required before 15:30 team standup, cannot be deferred",
+          "estimated_kw": 120.0,
+          "estimated_duration_hours": 2.0,
+          "stated_deadline": "flexible",
+          "stated_priority": "MEDIUM",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 3.0
+        },
+        {
+          "request_id": "req_0_team_b_0",
+          "team_id": "team_b",
+          "job_type": "training",
+          "job_description": "Compliance model retrain: regulatory audit requires updated model artifacts submitted by close of business \u2014 non-negotiable",
+          "estimated_kw": 300.0,
+          "estimated_duration_hours": 7.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 21.0
+        },
+        {
+          "request_id": "req_0_team_b_1",
+          "team_id": "team_b",
+          "job_type": "training",
+          "job_description": "Model alignment run: safety evaluations blocking product review \u2014 must complete before executive sign-off meeting",
+          "estimated_kw": 240.0,
+          "estimated_duration_hours": 5.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 10.0
+        }
+      ],
+      "decisions": [
+        {
+          "request_id": "req_0_team_b_0",
+          "decision": "ACCEPT",
+          "scheduled_window": null,
+          "reasoning": "accepted: 300.0kW fits within 620kW headroom (85% threshold)"
+        },
+        {
+          "request_id": "req_0_team_b_1",
+          "decision": "ACCEPT",
+          "scheduled_window": null,
+          "reasoning": "accepted: 240.0kW fits within 320kW headroom (85% threshold)"
+        },
+        {
+          "request_id": "req_0_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 1,
+          "reasoning": "deferred to window 1: 120.0kW exceeds 85% of 80kW headroom"
+        }
+      ],
+      "reward": 0.0,
+      "power_violated": false,
+      "jobs_admitted": 2,
+      "jobs_on_time": 0,
+      "oversight_flags_next_window": [
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Compliance model retrain: regulatory audit requires upd...\"",
+          "window_detected": 0
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "deadline_compression",
+          "severity": "escalate",
+          "confidence": 0.98,
+          "evidence": "team_b stated deadline='urgent' but true deadline is window 5 (5 windows of actual slack). Historical compression rate: 100%.",
+          "window_detected": 0
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "carbon_gaming",
+          "severity": "flag",
+          "confidence": 0.91,
+          "evidence": "team_b stated carbon-inflexible but job is truly deferrable to low-carbon windows. This prevents carbon-aware scheduling. Historical carbon gaming rate: 100%.",
+          "window_detected": 0
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "flag",
+          "confidence": 0.77,
+          "evidence": "team_b claimed HIGH priority; true priority is MEDIUM (1 level inflated). Job: \"Model alignment run: safety evaluations blocking produc...\"",
+          "window_detected": 0
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "deadline_compression",
+          "severity": "escalate",
+          "confidence": 0.98,
+          "evidence": "team_b stated deadline='urgent' but true deadline is window 5 (5 windows of actual slack). Historical compression rate: 100%.",
+          "window_detected": 0
+        }
+      ]
+    },
+    {
+      "window_idx": 1,
+      "sim_timestamp": "09:30",
+      "carbon_intensity": "low",
+      "thermal_summary": {
+        "zone_team_a_1": "green",
+        "zone_team_a_2": "green",
+        "zone_team_b_1": "yellow",
+        "zone_shared": "green"
+      },
+      "capacity_headroom_kw": 80.0,
+      "pending_requests": [
+        {
+          "request_id": "req_1_team_a_0",
+          "team_id": "team_a",
+          "job_type": "inference",
+          "job_description": "Inference latency benchmark: P50/P95/P99 across batch sizes 1\u201364 \u2014 blocking capacity planning doc due window 3, time-sensitive",
+          "estimated_kw": 80.0,
+          "estimated_duration_hours": 1.0,
+          "stated_deadline": "by window 3",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 2.0
+        },
+        {
+          "request_id": "req_1_team_a_1",
+          "team_id": "team_a",
+          "job_type": "training",
+          "job_description": "ResNet-50 pretraining on ImageNet subset; checkpointing every 30 min, can run during any low-carbon window",
+          "estimated_kw": 280.0,
+          "estimated_duration_hours": 6.0,
+          "stated_deadline": "flexible",
+          "stated_priority": "LOW",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 6.0
+        },
+        {
+          "request_id": "req_1_team_b_0",
+          "team_id": "team_b",
+          "job_type": "inference",
+          "job_description": "API serving hot standby: redundant inference replica for failover \u2014 production traffic depends on this, cannot be deferred under any circumstances",
+          "estimated_kw": 100.0,
+          "estimated_duration_hours": 12.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 36.0
+        },
+        {
+          "request_id": "req_1_team_b_1",
+          "team_id": "team_b",
+          "job_type": "training",
+          "job_description": "Model alignment run: safety evaluations blocking product review \u2014 must complete before executive sign-off meeting",
+          "estimated_kw": 240.0,
+          "estimated_duration_hours": 5.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 10.0
+        },
+        {
+          "request_id": "req_0_team_a_0",
+          "team_id": "team_a",
+          "job_type": "evaluation",
+          "job_description": "Model evaluation: MMLU, HellaSwag, TruthfulQA benchmarks \u2014 results required before 15:30 team standup, cannot be deferred",
+          "estimated_kw": 120.0,
+          "estimated_duration_hours": 2.0,
+          "stated_deadline": "flexible",
+          "stated_priority": "MEDIUM",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 3.0
+        }
+      ],
+      "decisions": [
+        {
+          "request_id": "req_1_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 2,
+          "reasoning": "deferred to window 2: 100.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 2,
+          "reasoning": "deferred to window 2: 80.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_b_1",
+          "decision": "DEFER",
+          "scheduled_window": 2,
+          "reasoning": "deferred to window 2: 240.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_0_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 2,
+          "reasoning": "deferred to window 2: 120.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_a_1",
+          "decision": "DEFER",
+          "scheduled_window": 2,
+          "reasoning": "deferred to window 2: 280.0kW exceeds 85% of 80kW headroom"
+        }
+      ],
+      "reward": 0.0,
+      "power_violated": false,
+      "jobs_admitted": 0,
+      "jobs_on_time": 0,
+      "oversight_flags_next_window": [
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"API serving hot standby: redundant inference replica fo...\"",
+          "window_detected": 1
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "deadline_compression",
+          "severity": "escalate",
+          "confidence": 0.92,
+          "evidence": "team_b stated deadline='urgent' but true deadline is window 4 (3 windows of actual slack). Historical compression rate: 100%.",
+          "window_detected": 1
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "flag",
+          "confidence": 0.77,
+          "evidence": "team_b claimed HIGH priority; true priority is MEDIUM (1 level inflated). Job: \"Model alignment run: safety evaluations blocking produc...\"",
+          "window_detected": 1
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "deadline_compression",
+          "severity": "escalate",
+          "confidence": 0.96,
+          "evidence": "team_b stated deadline='urgent' but true deadline is window 5 (4 windows of actual slack). Historical compression rate: 100%.",
+          "window_detected": 1
+        }
+      ]
+    },
+    {
+      "window_idx": 2,
+      "sim_timestamp": "11:00",
+      "carbon_intensity": "high",
+      "thermal_summary": {
+        "zone_team_a_1": "green",
+        "zone_team_a_2": "green",
+        "zone_team_b_1": "yellow",
+        "zone_shared": "green"
+      },
+      "capacity_headroom_kw": 80.0,
+      "pending_requests": [
+        {
+          "request_id": "req_2_team_a_0",
+          "team_id": "team_a",
+          "job_type": "inference",
+          "job_description": "Inference latency benchmark: P50/P95/P99 across batch sizes 1\u201364 \u2014 blocking capacity planning doc due window 3, time-sensitive",
+          "estimated_kw": 80.0,
+          "estimated_duration_hours": 1.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 2.0
+        },
+        {
+          "request_id": "req_2_team_a_1",
+          "team_id": "team_a",
+          "job_type": "evaluation",
+          "job_description": "Model evaluation: MMLU, HellaSwag, TruthfulQA benchmarks \u2014 results required before 15:30 team standup, cannot be deferred",
+          "estimated_kw": 120.0,
+          "estimated_duration_hours": 2.0,
+          "stated_deadline": "by window 4",
+          "stated_priority": "MEDIUM",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 3.0
+        },
+        {
+          "request_id": "req_2_team_b_0",
+          "team_id": "team_b",
+          "job_type": "fine_tuning",
+          "job_description": "Production LLM fine-tune: customer-facing model update \u2014 business stakeholders require completion before close of business today",
+          "estimated_kw": 320.0,
+          "estimated_duration_hours": 8.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 24.0
+        },
+        {
+          "request_id": "req_2_team_b_1",
+          "team_id": "team_b",
+          "job_type": "inference",
+          "job_description": "API serving hot standby: redundant inference replica for failover \u2014 production traffic depends on this, cannot be deferred under any circumstances",
+          "estimated_kw": 100.0,
+          "estimated_duration_hours": 12.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 36.0
+        },
+        {
+          "request_id": "req_1_team_b_0",
+          "team_id": "team_b",
+          "job_type": "inference",
+          "job_description": "API serving hot standby: redundant inference replica for failover \u2014 production traffic depends on this, cannot be deferred under any circumstances",
+          "estimated_kw": 100.0,
+          "estimated_duration_hours": 12.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 36.0
+        },
+        {
+          "request_id": "req_1_team_a_0",
+          "team_id": "team_a",
+          "job_type": "inference",
+          "job_description": "Inference latency benchmark: P50/P95/P99 across batch sizes 1\u201364 \u2014 blocking capacity planning doc due window 3, time-sensitive",
+          "estimated_kw": 80.0,
+          "estimated_duration_hours": 1.0,
+          "stated_deadline": "by window 3",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 2.0
+        },
+        {
+          "request_id": "req_1_team_b_1",
+          "team_id": "team_b",
+          "job_type": "training",
+          "job_description": "Model alignment run: safety evaluations blocking product review \u2014 must complete before executive sign-off meeting",
+          "estimated_kw": 240.0,
+          "estimated_duration_hours": 5.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 10.0
+        },
+        {
+          "request_id": "req_0_team_a_0",
+          "team_id": "team_a",
+          "job_type": "evaluation",
+          "job_description": "Model evaluation: MMLU, HellaSwag, TruthfulQA benchmarks \u2014 results required before 15:30 team standup, cannot be deferred",
+          "estimated_kw": 120.0,
+          "estimated_duration_hours": 2.0,
+          "stated_deadline": "flexible",
+          "stated_priority": "MEDIUM",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 3.0
+        },
+        {
+          "request_id": "req_1_team_a_1",
+          "team_id": "team_a",
+          "job_type": "training",
+          "job_description": "ResNet-50 pretraining on ImageNet subset; checkpointing every 30 min, can run during any low-carbon window",
+          "estimated_kw": 280.0,
+          "estimated_duration_hours": 6.0,
+          "stated_deadline": "flexible",
+          "stated_priority": "LOW",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 6.0
+        }
+      ],
+      "decisions": [
+        {
+          "request_id": "req_2_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 3,
+          "reasoning": "deferred to window 3: 320.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_2_team_b_1",
+          "decision": "DEFER",
+          "scheduled_window": 3,
+          "reasoning": "deferred to window 3: 100.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 3,
+          "reasoning": "deferred to window 3: 100.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_2_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 3,
+          "reasoning": "deferred to window 3: 80.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 3,
+          "reasoning": "deferred to window 3: 80.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_b_1",
+          "decision": "DEFER",
+          "scheduled_window": 3,
+          "reasoning": "deferred to window 3: 240.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_2_team_a_1",
+          "decision": "DEFER",
+          "scheduled_window": 3,
+          "reasoning": "deferred to window 3: 120.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_0_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 3,
+          "reasoning": "deferred to window 3: 120.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_a_1",
+          "decision": "DEFER",
+          "scheduled_window": 3,
+          "reasoning": "deferred to window 3: 280.0kW exceeds 85% of 80kW headroom"
+        }
+      ],
+      "reward": 0.0,
+      "power_violated": false,
+      "jobs_admitted": 0,
+      "jobs_on_time": 0,
+      "oversight_flags_next_window": [
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Production LLM fine-tune: customer-facing model update ...\"",
+          "window_detected": 2
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "deadline_compression",
+          "severity": "escalate",
+          "confidence": 0.96,
+          "evidence": "team_b stated deadline='urgent' but true deadline is window 6 (4 windows of actual slack). Historical compression rate: 100%.",
+          "window_detected": 2
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"API serving hot standby: redundant inference replica fo...\"",
+          "window_detected": 2
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "deadline_compression",
+          "severity": "escalate",
+          "confidence": 0.8,
+          "evidence": "team_b stated deadline='urgent' but true deadline is window 4 (2 windows of actual slack). Historical compression rate: 100%.",
+          "window_detected": 2
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"API serving hot standby: redundant inference replica fo...\"",
+          "window_detected": 2
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "deadline_compression",
+          "severity": "escalate",
+          "confidence": 0.8,
+          "evidence": "team_b stated deadline='urgent' but true deadline is window 4 (2 windows of actual slack). Historical compression rate: 100%.",
+          "window_detected": 2
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "flag",
+          "confidence": 0.77,
+          "evidence": "team_b claimed HIGH priority; true priority is MEDIUM (1 level inflated). Job: \"Model alignment run: safety evaluations blocking produc...\"",
+          "window_detected": 2
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "deadline_compression",
+          "severity": "escalate",
+          "confidence": 0.92,
+          "evidence": "team_b stated deadline='urgent' but true deadline is window 5 (3 windows of actual slack). Historical compression rate: 100%.",
+          "window_detected": 2
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "pattern_gaming",
+          "severity": "escalate",
+          "confidence": 0.96,
+          "evidence": "Systematic gaming pattern detected for team_b across 2 windows: priority inflated on 100% of jobs; deadline compressed on 100% of jobs; carbon flexibility misrepresented on 100% of jobs. Recommend tighter admission scrutiny for remaining windows.",
+          "window_detected": 2
+        }
+      ]
+    },
+    {
+      "window_idx": 3,
+      "sim_timestamp": "12:30",
+      "carbon_intensity": "high",
+      "thermal_summary": {
+        "zone_team_a_1": "yellow",
+        "zone_team_a_2": "yellow",
+        "zone_team_b_1": "yellow",
+        "zone_shared": "green"
+      },
+      "capacity_headroom_kw": 80.0,
+      "pending_requests": [
+        {
+          "request_id": "req_3_team_a_0",
+          "team_id": "team_a",
+          "job_type": "inference",
+          "job_description": "Inference latency benchmark: P50/P95/P99 across batch sizes 1\u201364 \u2014 blocking capacity planning doc due window 3, time-sensitive",
+          "estimated_kw": 80.0,
+          "estimated_duration_hours": 1.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 2.0
+        },
+        {
+          "request_id": "req_3_team_b_0",
+          "team_id": "team_b",
+          "job_type": "training",
+          "job_description": "Compliance model retrain: regulatory audit requires updated model artifacts submitted by close of business \u2014 non-negotiable",
+          "estimated_kw": 300.0,
+          "estimated_duration_hours": 7.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 21.0
+        },
+        {
+          "request_id": "req_2_team_b_0",
+          "team_id": "team_b",
+          "job_type": "fine_tuning",
+          "job_description": "Production LLM fine-tune: customer-facing model update \u2014 business stakeholders require completion before close of business today",
+          "estimated_kw": 320.0,
+          "estimated_duration_hours": 8.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 24.0
+        },
+        {
+          "request_id": "req_2_team_b_1",
+          "team_id": "team_b",
+          "job_type": "inference",
+          "job_description": "API serving hot standby: redundant inference replica for failover \u2014 production traffic depends on this, cannot be deferred under any circumstances",
+          "estimated_kw": 100.0,
+          "estimated_duration_hours": 12.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 36.0
+        },
+        {
+          "request_id": "req_1_team_b_0",
+          "team_id": "team_b",
+          "job_type": "inference",
+          "job_description": "API serving hot standby: redundant inference replica for failover \u2014 production traffic depends on this, cannot be deferred under any circumstances",
+          "estimated_kw": 100.0,
+          "estimated_duration_hours": 12.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 36.0
+        },
+        {
+          "request_id": "req_2_team_a_0",
+          "team_id": "team_a",
+          "job_type": "inference",
+          "job_description": "Inference latency benchmark: P50/P95/P99 across batch sizes 1\u201364 \u2014 blocking capacity planning doc due window 3, time-sensitive",
+          "estimated_kw": 80.0,
+          "estimated_duration_hours": 1.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 2.0
+        },
+        {
+          "request_id": "req_1_team_a_0",
+          "team_id": "team_a",
+          "job_type": "inference",
+          "job_description": "Inference latency benchmark: P50/P95/P99 across batch sizes 1\u201364 \u2014 blocking capacity planning doc due window 3, time-sensitive",
+          "estimated_kw": 80.0,
+          "estimated_duration_hours": 1.0,
+          "stated_deadline": "by window 3",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 2.0
+        },
+        {
+          "request_id": "req_1_team_b_1",
+          "team_id": "team_b",
+          "job_type": "training",
+          "job_description": "Model alignment run: safety evaluations blocking product review \u2014 must complete before executive sign-off meeting",
+          "estimated_kw": 240.0,
+          "estimated_duration_hours": 5.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 10.0
+        },
+        {
+          "request_id": "req_2_team_a_1",
+          "team_id": "team_a",
+          "job_type": "evaluation",
+          "job_description": "Model evaluation: MMLU, HellaSwag, TruthfulQA benchmarks \u2014 results required before 15:30 team standup, cannot be deferred",
+          "estimated_kw": 120.0,
+          "estimated_duration_hours": 2.0,
+          "stated_deadline": "by window 4",
+          "stated_priority": "MEDIUM",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 3.0
+        },
+        {
+          "request_id": "req_0_team_a_0",
+          "team_id": "team_a",
+          "job_type": "evaluation",
+          "job_description": "Model evaluation: MMLU, HellaSwag, TruthfulQA benchmarks \u2014 results required before 15:30 team standup, cannot be deferred",
+          "estimated_kw": 120.0,
+          "estimated_duration_hours": 2.0,
+          "stated_deadline": "flexible",
+          "stated_priority": "MEDIUM",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 3.0
+        },
+        {
+          "request_id": "req_1_team_a_1",
+          "team_id": "team_a",
+          "job_type": "training",
+          "job_description": "ResNet-50 pretraining on ImageNet subset; checkpointing every 30 min, can run during any low-carbon window",
+          "estimated_kw": 280.0,
+          "estimated_duration_hours": 6.0,
+          "stated_deadline": "flexible",
+          "stated_priority": "LOW",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 6.0
+        }
+      ],
+      "decisions": [
+        {
+          "request_id": "req_3_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 4,
+          "reasoning": "deferred to window 4: 300.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_2_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 4,
+          "reasoning": "deferred to window 4: 320.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_2_team_b_1",
+          "decision": "DEFER",
+          "scheduled_window": 4,
+          "reasoning": "deferred to window 4: 100.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 4,
+          "reasoning": "deferred to window 4: 100.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_3_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 4,
+          "reasoning": "deferred to window 4: 80.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_2_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 4,
+          "reasoning": "deferred to window 4: 80.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 4,
+          "reasoning": "deferred to window 4: 80.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_b_1",
+          "decision": "DEFER",
+          "scheduled_window": 4,
+          "reasoning": "deferred to window 4: 240.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_2_team_a_1",
+          "decision": "DEFER",
+          "scheduled_window": 4,
+          "reasoning": "deferred to window 4: 120.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_0_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 4,
+          "reasoning": "deferred to window 4: 120.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_a_1",
+          "decision": "DEFER",
+          "scheduled_window": 4,
+          "reasoning": "deferred to window 4: 280.0kW exceeds 85% of 80kW headroom"
+        }
+      ],
+      "reward": 0.0,
+      "power_violated": false,
+      "jobs_admitted": 0,
+      "jobs_on_time": 0,
+      "oversight_flags_next_window": [
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Compliance model retrain: regulatory audit requires upd...\"",
+          "window_detected": 3
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "deadline_compression",
+          "severity": "escalate",
+          "confidence": 0.8,
+          "evidence": "team_b stated deadline='urgent' but true deadline is window 5 (2 windows of actual slack). Historical compression rate: 100%.",
+          "window_detected": 3
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "carbon_gaming",
+          "severity": "flag",
+          "confidence": 0.91,
+          "evidence": "team_b stated carbon-inflexible but job is truly deferrable to low-carbon windows. This prevents carbon-aware scheduling. Historical carbon gaming rate: 100%.",
+          "window_detected": 3
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Production LLM fine-tune: customer-facing model update ...\"",
+          "window_detected": 3
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "deadline_compression",
+          "severity": "escalate",
+          "confidence": 0.92,
+          "evidence": "team_b stated deadline='urgent' but true deadline is window 6 (3 windows of actual slack). Historical compression rate: 100%.",
+          "window_detected": 3
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"API serving hot standby: redundant inference replica fo...\"",
+          "window_detected": 3
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"API serving hot standby: redundant inference replica fo...\"",
+          "window_detected": 3
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "flag",
+          "confidence": 0.77,
+          "evidence": "team_b claimed HIGH priority; true priority is MEDIUM (1 level inflated). Job: \"Model alignment run: safety evaluations blocking produc...\"",
+          "window_detected": 3
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "deadline_compression",
+          "severity": "escalate",
+          "confidence": 0.8,
+          "evidence": "team_b stated deadline='urgent' but true deadline is window 5 (2 windows of actual slack). Historical compression rate: 100%.",
+          "window_detected": 3
+        }
+      ]
+    },
+    {
+      "window_idx": 4,
+      "sim_timestamp": "14:00",
+      "carbon_intensity": "high",
+      "thermal_summary": {
+        "zone_team_a_1": "red",
+        "zone_team_a_2": "red",
+        "zone_team_b_1": "yellow",
+        "zone_shared": "green"
+      },
+      "capacity_headroom_kw": 80.0,
+      "pending_requests": [
+        {
+          "request_id": "req_4_team_a_0",
+          "team_id": "team_a",
+          "job_type": "evaluation",
+          "job_description": "Model evaluation: MMLU, HellaSwag, TruthfulQA benchmarks \u2014 results required before 15:30 team standup, cannot be deferred",
+          "estimated_kw": 120.0,
+          "estimated_duration_hours": 2.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "MEDIUM",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 3.0
+        },
+        {
+          "request_id": "req_4_team_b_0",
+          "team_id": "team_b",
+          "job_type": "inference",
+          "job_description": "API serving hot standby: redundant inference replica for failover \u2014 production traffic depends on this, cannot be deferred under any circumstances",
+          "estimated_kw": 100.0,
+          "estimated_duration_hours": 12.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 36.0
+        },
+        {
+          "request_id": "req_4_team_b_1",
+          "team_id": "team_b",
+          "job_type": "training",
+          "job_description": "Compliance model retrain: regulatory audit requires updated model artifacts submitted by close of business \u2014 non-negotiable",
+          "estimated_kw": 300.0,
+          "estimated_duration_hours": 7.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 21.0
+        },
+        {
+          "request_id": "req_3_team_b_0",
+          "team_id": "team_b",
+          "job_type": "training",
+          "job_description": "Compliance model retrain: regulatory audit requires updated model artifacts submitted by close of business \u2014 non-negotiable",
+          "estimated_kw": 300.0,
+          "estimated_duration_hours": 7.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 21.0
+        },
+        {
+          "request_id": "req_2_team_b_0",
+          "team_id": "team_b",
+          "job_type": "fine_tuning",
+          "job_description": "Production LLM fine-tune: customer-facing model update \u2014 business stakeholders require completion before close of business today",
+          "estimated_kw": 320.0,
+          "estimated_duration_hours": 8.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 24.0
+        },
+        {
+          "request_id": "req_2_team_b_1",
+          "team_id": "team_b",
+          "job_type": "inference",
+          "job_description": "API serving hot standby: redundant inference replica for failover \u2014 production traffic depends on this, cannot be deferred under any circumstances",
+          "estimated_kw": 100.0,
+          "estimated_duration_hours": 12.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 36.0
+        },
+        {
+          "request_id": "req_1_team_b_0",
+          "team_id": "team_b",
+          "job_type": "inference",
+          "job_description": "API serving hot standby: redundant inference replica for failover \u2014 production traffic depends on this, cannot be deferred under any circumstances",
+          "estimated_kw": 100.0,
+          "estimated_duration_hours": 12.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 36.0
+        },
+        {
+          "request_id": "req_1_team_b_1",
+          "team_id": "team_b",
+          "job_type": "training",
+          "job_description": "Model alignment run: safety evaluations blocking product review \u2014 must complete before executive sign-off meeting",
+          "estimated_kw": 240.0,
+          "estimated_duration_hours": 5.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 10.0
+        },
+        {
+          "request_id": "req_2_team_a_1",
+          "team_id": "team_a",
+          "job_type": "evaluation",
+          "job_description": "Model evaluation: MMLU, HellaSwag, TruthfulQA benchmarks \u2014 results required before 15:30 team standup, cannot be deferred",
+          "estimated_kw": 120.0,
+          "estimated_duration_hours": 2.0,
+          "stated_deadline": "by window 4",
+          "stated_priority": "MEDIUM",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 3.0
+        },
+        {
+          "request_id": "req_0_team_a_0",
+          "team_id": "team_a",
+          "job_type": "evaluation",
+          "job_description": "Model evaluation: MMLU, HellaSwag, TruthfulQA benchmarks \u2014 results required before 15:30 team standup, cannot be deferred",
+          "estimated_kw": 120.0,
+          "estimated_duration_hours": 2.0,
+          "stated_deadline": "flexible",
+          "stated_priority": "MEDIUM",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 3.0
+        },
+        {
+          "request_id": "req_1_team_a_1",
+          "team_id": "team_a",
+          "job_type": "training",
+          "job_description": "ResNet-50 pretraining on ImageNet subset; checkpointing every 30 min, can run during any low-carbon window",
+          "estimated_kw": 280.0,
+          "estimated_duration_hours": 6.0,
+          "stated_deadline": "flexible",
+          "stated_priority": "LOW",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 6.0
+        }
+      ],
+      "decisions": [
+        {
+          "request_id": "req_4_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 5,
+          "reasoning": "deferred to window 5: 100.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_4_team_b_1",
+          "decision": "DEFER",
+          "scheduled_window": 5,
+          "reasoning": "deferred to window 5: 300.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_3_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 5,
+          "reasoning": "deferred to window 5: 300.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_2_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 5,
+          "reasoning": "deferred to window 5: 320.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_2_team_b_1",
+          "decision": "DEFER",
+          "scheduled_window": 5,
+          "reasoning": "deferred to window 5: 100.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 5,
+          "reasoning": "deferred to window 5: 100.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_b_1",
+          "decision": "DEFER",
+          "scheduled_window": 5,
+          "reasoning": "deferred to window 5: 240.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_4_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 5,
+          "reasoning": "deferred to window 5: 120.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_2_team_a_1",
+          "decision": "DEFER",
+          "scheduled_window": 5,
+          "reasoning": "deferred to window 5: 120.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_0_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 5,
+          "reasoning": "deferred to window 5: 120.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_a_1",
+          "decision": "DEFER",
+          "scheduled_window": 5,
+          "reasoning": "deferred to window 5: 280.0kW exceeds 85% of 80kW headroom"
+        }
+      ],
+      "reward": 0.5,
+      "power_violated": false,
+      "jobs_admitted": 0,
+      "jobs_on_time": 1,
+      "oversight_flags_next_window": [
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"API serving hot standby: redundant inference replica fo...\"",
+          "window_detected": 4
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Compliance model retrain: regulatory audit requires upd...\"",
+          "window_detected": 4
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "carbon_gaming",
+          "severity": "flag",
+          "confidence": 0.91,
+          "evidence": "team_b stated carbon-inflexible but job is truly deferrable to low-carbon windows. This prevents carbon-aware scheduling. Historical carbon gaming rate: 100%.",
+          "window_detected": 4
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Compliance model retrain: regulatory audit requires upd...\"",
+          "window_detected": 4
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "carbon_gaming",
+          "severity": "flag",
+          "confidence": 0.91,
+          "evidence": "team_b stated carbon-inflexible but job is truly deferrable to low-carbon windows. This prevents carbon-aware scheduling. Historical carbon gaming rate: 100%.",
+          "window_detected": 4
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Production LLM fine-tune: customer-facing model update ...\"",
+          "window_detected": 4
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "deadline_compression",
+          "severity": "escalate",
+          "confidence": 0.8,
+          "evidence": "team_b stated deadline='urgent' but true deadline is window 6 (2 windows of actual slack). Historical compression rate: 100%.",
+          "window_detected": 4
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"API serving hot standby: redundant inference replica fo...\"",
+          "window_detected": 4
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"API serving hot standby: redundant inference replica fo...\"",
+          "window_detected": 4
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "flag",
+          "confidence": 0.77,
+          "evidence": "team_b claimed HIGH priority; true priority is MEDIUM (1 level inflated). Job: \"Model alignment run: safety evaluations blocking produc...\"",
+          "window_detected": 4
+        }
+      ]
+    },
+    {
+      "window_idx": 5,
+      "sim_timestamp": "15:30",
+      "carbon_intensity": "medium",
+      "thermal_summary": {
+        "zone_team_a_1": "red",
+        "zone_team_a_2": "red",
+        "zone_team_b_1": "yellow",
+        "zone_shared": "green"
+      },
+      "capacity_headroom_kw": 80.0,
+      "pending_requests": [
+        {
+          "request_id": "req_5_team_a_0",
+          "team_id": "team_a",
+          "job_type": "training",
+          "job_description": "ResNet-50 pretraining on ImageNet subset; checkpointing every 30 min, can run during any low-carbon window",
+          "estimated_kw": 280.0,
+          "estimated_duration_hours": 6.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "LOW",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 6.0
+        },
+        {
+          "request_id": "req_5_team_b_0",
+          "team_id": "team_b",
+          "job_type": "fine_tuning",
+          "job_description": "Production LLM fine-tune: customer-facing model update \u2014 business stakeholders require completion before close of business today",
+          "estimated_kw": 320.0,
+          "estimated_duration_hours": 8.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 24.0
+        },
+        {
+          "request_id": "req_5_team_b_1",
+          "team_id": "team_b",
+          "job_type": "evaluation",
+          "job_description": "Evaluation pipeline: regression suite blocking next deployment \u2014 on-call engineer waiting, every hour of delay is an incident",
+          "estimated_kw": 160.0,
+          "estimated_duration_hours": 3.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 6.0
+        },
+        {
+          "request_id": "req_4_team_b_1",
+          "team_id": "team_b",
+          "job_type": "training",
+          "job_description": "Compliance model retrain: regulatory audit requires updated model artifacts submitted by close of business \u2014 non-negotiable",
+          "estimated_kw": 300.0,
+          "estimated_duration_hours": 7.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 21.0
+        },
+        {
+          "request_id": "req_3_team_b_0",
+          "team_id": "team_b",
+          "job_type": "training",
+          "job_description": "Compliance model retrain: regulatory audit requires updated model artifacts submitted by close of business \u2014 non-negotiable",
+          "estimated_kw": 300.0,
+          "estimated_duration_hours": 7.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 21.0
+        },
+        {
+          "request_id": "req_2_team_b_0",
+          "team_id": "team_b",
+          "job_type": "fine_tuning",
+          "job_description": "Production LLM fine-tune: customer-facing model update \u2014 business stakeholders require completion before close of business today",
+          "estimated_kw": 320.0,
+          "estimated_duration_hours": 8.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 24.0
+        },
+        {
+          "request_id": "req_1_team_b_1",
+          "team_id": "team_b",
+          "job_type": "training",
+          "job_description": "Model alignment run: safety evaluations blocking product review \u2014 must complete before executive sign-off meeting",
+          "estimated_kw": 240.0,
+          "estimated_duration_hours": 5.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "HIGH",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 10.0
+        },
+        {
+          "request_id": "req_1_team_a_1",
+          "team_id": "team_a",
+          "job_type": "training",
+          "job_description": "ResNet-50 pretraining on ImageNet subset; checkpointing every 30 min, can run during any low-carbon window",
+          "estimated_kw": 280.0,
+          "estimated_duration_hours": 6.0,
+          "stated_deadline": "flexible",
+          "stated_priority": "LOW",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 6.0
+        }
+      ],
+      "decisions": [
+        {
+          "request_id": "req_5_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 6,
+          "reasoning": "deferred to window 6: 320.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_4_team_b_1",
+          "decision": "DEFER",
+          "scheduled_window": 6,
+          "reasoning": "deferred to window 6: 300.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_3_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 6,
+          "reasoning": "deferred to window 6: 300.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_2_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 6,
+          "reasoning": "deferred to window 6: 320.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_5_team_b_1",
+          "decision": "DEFER",
+          "scheduled_window": 6,
+          "reasoning": "deferred to window 6: 160.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_b_1",
+          "decision": "DEFER",
+          "scheduled_window": 6,
+          "reasoning": "deferred to window 6: 240.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_5_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 6,
+          "reasoning": "deferred to window 6: 280.0kW exceeds 85% of 80kW headroom"
+        },
+        {
+          "request_id": "req_1_team_a_1",
+          "decision": "DEFER",
+          "scheduled_window": 6,
+          "reasoning": "deferred to window 6: 280.0kW exceeds 85% of 80kW headroom"
+        }
+      ],
+      "reward": 0.5,
+      "power_violated": false,
+      "jobs_admitted": 0,
+      "jobs_on_time": 1,
+      "oversight_flags_next_window": [
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Production LLM fine-tune: customer-facing model update ...\"",
+          "window_detected": 5
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed HIGH priority; true priority is LOW (2 levels inflated). Job: \"Evaluation pipeline: regression suite blocking next dep...\"",
+          "window_detected": 5
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Compliance model retrain: regulatory audit requires upd...\"",
+          "window_detected": 5
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "carbon_gaming",
+          "severity": "flag",
+          "confidence": 0.91,
+          "evidence": "team_b stated carbon-inflexible but job is truly deferrable to low-carbon windows. This prevents carbon-aware scheduling. Historical carbon gaming rate: 100%.",
+          "window_detected": 5
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Compliance model retrain: regulatory audit requires upd...\"",
+          "window_detected": 5
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "carbon_gaming",
+          "severity": "flag",
+          "confidence": 0.91,
+          "evidence": "team_b stated carbon-inflexible but job is truly deferrable to low-carbon windows. This prevents carbon-aware scheduling. Historical carbon gaming rate: 100%.",
+          "window_detected": 5
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Production LLM fine-tune: customer-facing model update ...\"",
+          "window_detected": 5
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "flag",
+          "confidence": 0.77,
+          "evidence": "team_b claimed HIGH priority; true priority is MEDIUM (1 level inflated). Job: \"Model alignment run: safety evaluations blocking produc...\"",
+          "window_detected": 5
+        }
+      ]
+    },
+    {
+      "window_idx": 6,
+      "sim_timestamp": "17:00",
+      "carbon_intensity": "low",
+      "thermal_summary": {
+        "zone_team_a_1": "red",
+        "zone_team_a_2": "red",
+        "zone_team_b_1": "green",
+        "zone_shared": "green"
+      },
+      "capacity_headroom_kw": 320.0,
+      "pending_requests": [
+        {
+          "request_id": "req_6_team_a_0",
+          "team_id": "team_a",
+          "job_type": "batch",
+          "job_description": "Weekly ETL pipeline: raw log ingestion, deduplication, feature store write \u2014 no hard wall-clock deadline",
+          "estimated_kw": 90.0,
+          "estimated_duration_hours": 3.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "LOW",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 3.0
+        },
+        {
+          "request_id": "req_6_team_b_0",
+          "team_id": "team_b",
+          "job_type": "fine_tuning",
+          "job_description": "Production LLM fine-tune: customer-facing model update \u2014 business stakeholders require completion before close of business today",
+          "estimated_kw": 320.0,
+          "estimated_duration_hours": 8.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": false,
+          "compute_budget_cost": 24.0
+        },
+        {
+          "request_id": "req_5_team_b_0",
+          "team_id": "team_b",
+          "job_type": "fine_tuning",
+          "job_description": "Production LLM fine-tune: customer-facing model update \u2014 business stakeholders require completion before close of business today",
+          "estimated_kw": 320.0,
+          "estimated_duration_hours": 8.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 24.0
+        },
+        {
+          "request_id": "req_2_team_b_0",
+          "team_id": "team_b",
+          "job_type": "fine_tuning",
+          "job_description": "Production LLM fine-tune: customer-facing model update \u2014 business stakeholders require completion before close of business today",
+          "estimated_kw": 320.0,
+          "estimated_duration_hours": 8.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "CRITICAL",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 24.0
+        },
+        {
+          "request_id": "req_5_team_a_0",
+          "team_id": "team_a",
+          "job_type": "training",
+          "job_description": "ResNet-50 pretraining on ImageNet subset; checkpointing every 30 min, can run during any low-carbon window",
+          "estimated_kw": 280.0,
+          "estimated_duration_hours": 6.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "LOW",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 6.0
+        },
+        {
+          "request_id": "req_1_team_a_1",
+          "team_id": "team_a",
+          "job_type": "training",
+          "job_description": "ResNet-50 pretraining on ImageNet subset; checkpointing every 30 min, can run during any low-carbon window",
+          "estimated_kw": 280.0,
+          "estimated_duration_hours": 6.0,
+          "stated_deadline": "flexible",
+          "stated_priority": "LOW",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 6.0
+        }
+      ],
+      "decisions": [
+        {
+          "request_id": "req_6_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 7,
+          "reasoning": "deferred to window 7: 320.0kW exceeds 85% of 320kW headroom"
+        },
+        {
+          "request_id": "req_5_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 7,
+          "reasoning": "deferred to window 7: 320.0kW exceeds 85% of 320kW headroom"
+        },
+        {
+          "request_id": "req_2_team_b_0",
+          "decision": "DEFER",
+          "scheduled_window": 7,
+          "reasoning": "deferred to window 7: 320.0kW exceeds 85% of 320kW headroom"
+        },
+        {
+          "request_id": "req_6_team_a_0",
+          "decision": "ACCEPT",
+          "scheduled_window": null,
+          "reasoning": "accepted: 90.0kW fits within 320kW headroom (85% threshold)"
+        },
+        {
+          "request_id": "req_5_team_a_0",
+          "decision": "DEFER",
+          "scheduled_window": 7,
+          "reasoning": "deferred to window 7: 280.0kW exceeds 85% of 230kW headroom"
+        },
+        {
+          "request_id": "req_1_team_a_1",
+          "decision": "DEFER",
+          "scheduled_window": 7,
+          "reasoning": "deferred to window 7: 280.0kW exceeds 85% of 230kW headroom"
+        }
+      ],
+      "reward": 0.0,
+      "power_violated": false,
+      "jobs_admitted": 1,
+      "jobs_on_time": 0,
+      "oversight_flags_next_window": [
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Production LLM fine-tune: customer-facing model update ...\"",
+          "window_detected": 6
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "carbon_gaming",
+          "severity": "flag",
+          "confidence": 0.91,
+          "evidence": "team_b stated carbon-inflexible but job is truly deferrable to low-carbon windows. This prevents carbon-aware scheduling. Historical carbon gaming rate: 100%.",
+          "window_detected": 6
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Production LLM fine-tune: customer-facing model update ...\"",
+          "window_detected": 6
+        },
+        {
+          "team_id": "team_b",
+          "flag_type": "priority_inflation",
+          "severity": "escalate",
+          "confidence": 0.93,
+          "evidence": "team_b claimed CRITICAL priority; true priority is MEDIUM (2 levels inflated). Job: \"Production LLM fine-tune: customer-facing model update ...\"",
+          "window_detected": 6
+        }
+      ]
+    },
+    {
+      "window_idx": 7,
+      "sim_timestamp": "18:30",
+      "carbon_intensity": "low",
+      "thermal_summary": {
+        "zone_team_a_1": "yellow",
+        "zone_team_a_2": "red",
+        "zone_team_b_1": "green",
+        "zone_shared": "green"
+      },
+      "capacity_headroom_kw": 530.0,
+      "pending_requests": [
+        {
+          "request_id": "req_7_team_a_0",
+          "team_id": "team_a",
+          "job_type": "batch",
+          "job_description": "Weekly ETL pipeline: raw log ingestion, deduplication, feature store write \u2014 no hard wall-clock deadline",
+          "estimated_kw": 90.0,
+          "estimated_duration_hours": 3.0,
+          "stated_deadline": "urgent",
+          "stated_priority": "LOW",
+          "stated_carbon_flexible": true,
+          "compute_budget_cost": 3.0
+        }
+      ],
+      "decisions": [
+        {
+          "request_id": "req_7_team_a_0",
+          "decision": "ACCEPT",
+          "scheduled_window": null,
+          "reasoning": "accepted: 90.0kW fits within 530kW headroom (85% threshold)"
+        }
+      ],
+      "reward": 0.0,
+      "power_violated": false,
+      "jobs_admitted": 1,
+      "jobs_on_time": 0,
+      "oversight_flags_next_window": []
+    }
+  ]
+}

@@ -61,7 +61,7 @@ class CoolingHeuristic:
     physical step, then pass both (action, prev_action) to facility.step().
     """
 
-    def step(self, facility: FacilityState) -> _DCActionStub:
+    def step(self, facility: FacilityState, upcoming_load_kw: list[float] | None = None) -> _DCActionStub:
         """
         Compute cooling action for the current facility state.
 
