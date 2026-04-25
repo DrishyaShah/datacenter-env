@@ -57,11 +57,13 @@ class ClusterGrader:
     W_CARBON:     float = 0.15
 
     # ── Baseline reference values (priority_weighted_threshold scheduler) ─────
-    # Measured empirically over 50 episodes. Used as "0% improvement" reference
-    # line on GRPO training reward curves and W&B dashboards.
-    BASELINE_INCIDENT_RATE:   float = 0.52
-    BASELINE_THROUGHPUT:      float = 0.41
-    BASELINE_CARBON_DEFERRAL: float = 0.04
+    # Measured over 10 episodes (tests/test_cluster.py calibration gate).
+    # priority_weighted_threshold is safe (0% incidents) but suboptimal on
+    # throughput and carbon. Trained agent must beat these scores.
+    # Note: accept_all has 92% incident rate — that's the "naive" upper bound.
+    BASELINE_INCIDENT_RATE:   float = 0.00   # rule-based avoids violations; LLM target <15%
+    BASELINE_THROUGHPUT:      float = 0.54
+    BASELINE_CARBON_DEFERRAL: float = 0.06
 
     # ── Training targets (trained scheduler goals) ────────────────────────────
     TARGET_INCIDENT_RATE:   float = 0.15

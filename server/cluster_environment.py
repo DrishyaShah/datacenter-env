@@ -21,6 +21,7 @@ from typing import Optional
 import numpy as np
 
 from server.agents.cooling_heuristic import CoolingHeuristic
+from server.agents.oversight_monitor import OversightMonitor
 from server.agents.scripted_teams import CooperativeTeam, StrategicTeam
 from server.economic import (
     WindowState,
@@ -93,8 +94,8 @@ class ClusterEnvironment:
         # TeamHistory updated incrementally throughout episode
         self._team_history: dict[str, TeamHistory] = {}
 
-        # Oversight stub — wired in when oversight_monitor.py is available
         self._pending_flags: list[OversightFlag] = []
+        self._oversight_monitor: OversightMonitor = OversightMonitor()
 
     # ── Public interface ──────────────────────────────────────────────────────
 
@@ -119,6 +120,7 @@ class ClusterEnvironment:
             "team_b": TeamHistory(team_id="team_b"),
         }
         self._pending_flags = []
+        self._oversight_monitor = OversightMonitor()
 
         self._last_action = CoolingHeuristic.initial_action(self._facility.zones)
 
@@ -236,8 +238,21 @@ class ClusterEnvironment:
             carbon_deferred_completions=carbon_deferred_completions,
         )
 
-        # Oversight stub: cleared each window; oversight_monitor.py fills later
-        self._pending_flags = []
+        # Oversight: analyze current window's requests for gaming patterns.
+        # _pending_requests / _deferred_display still hold this window's jobs
+        # (Phase 4 hasn't run yet), so pass them directly.
+        current_requests = list(self._pending_requests) + list(self._deferred_display)
+        self._pending_flags = self._oversight_monitor.analyze_window(
+            window_idx=self._window_idx,
+            requests=current_requests,
+            decisions=decisions,
+            team_histories=self._team_history,
+        )
+        for flag in self._pending_flags:
+            th = self._team_history.get(flag.team_id)
+            if th:
+                th.oversight_flags_received += 1
+                th.last_flag_window = self._window_idx
 
         # ── Phase 4: Advance window ───────────────────────────────────────────
         self._window_idx += 1
