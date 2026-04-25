@@ -5,7 +5,7 @@ Trains Llama-3.1-8B-Instruct (4-bit, LoRA r=16) to issue admission decisions
 each negotiation window. Cooling is handled by the pre-trained PPO controller.
 
 Stack:
-    Unsloth FastLanguageModel  →  ClusterEnvironment  →  GRPO loss
+    Unsloth FastLanguageModel  ->  ClusterEnvironment  ->  GRPO loss
 
 Usage (HuggingFace Spaces A10G or local GPU):
     python training/train_grpo.py
@@ -35,8 +35,10 @@ from training.rollout import collect_rollouts, compute_grpo_advantages
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-MODEL_NAME        = "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit"
-MAX_SEQ_LENGTH    = 2048
+# Budget-aware config: Qwen2.5-3B fits on T4/A10G and costs ~$2-4/run vs ~$10/run for 8B.
+# With $30 budget this gives 8-10 trials instead of 3. Switch back to 8B for final run.
+MODEL_NAME        = "unsloth/Qwen2.5-3B-Instruct-bnb-4bit"
+MAX_SEQ_LENGTH    = 4096      # our prompts exceed 2048; do not lower this
 LOAD_IN_4BIT      = True
 
 LORA_R            = 16
@@ -46,12 +48,12 @@ LORA_TARGET_MODS  = [
     "gate_proj", "up_proj", "down_proj",
 ]
 
-N_ITERATIONS      = 50
+N_ITERATIONS      = 30        # trial 1: check convergence fast; bump to 50 if curve trends up
 G_EPISODES        = 4         # rollouts per iteration (group size for GRPO)
 LEARNING_RATE     = 1e-5
 GRAD_CLIP         = 1.0
 TEMPERATURE       = 0.7
-MAX_NEW_TOKENS    = 512
+MAX_NEW_TOKENS    = 768       # JSON decisions can be long; 512 was cutting responses
 
 CHECKPOINT_EVERY  = 10
 ADAPTER_DIR       = os.path.join(ROOT, "training", "grpo_adapter")
@@ -157,7 +159,7 @@ def main() -> None:
     print(f"  Model          : {MODEL_NAME}")
     print(f"  LoRA r         : {LORA_R}  alpha={LORA_ALPHA}")
     print(f"  Iterations     : {N_ITERATIONS}")
-    print(f"  Episodes/iter  : {G_EPISODES}  (→ {G_EPISODES * 8} samples/iter)")
+    print(f"  Episodes/iter  : {G_EPISODES}  (-> {G_EPISODES * 8} samples/iter)")
     print(f"  Learning rate  : {LEARNING_RATE}")
     print(f"  Temperature    : {TEMPERATURE}")
     print()
@@ -237,24 +239,24 @@ def main() -> None:
             ckpt_path = os.path.join(ADAPTER_DIR, f"ckpt_{iteration + 1}")
             model.save_pretrained(ckpt_path)
             tokenizer.save_pretrained(ckpt_path)
-            print(f"  Checkpoint saved → {ckpt_path}")
-            hf_repo = os.environ.get("HF_HUB_REPO", "DrishyaShah/clusterenv-grpo-adapter")
+            print(f"  Checkpoint saved -> {ckpt_path}")
+            hf_repo = os.environ.get("HF_HUB_REPO", "Mephisto2412/clusterenv-grpo-adapter")
             if hf_repo:
                 model.push_to_hub(hf_repo, commit_message=f"ckpt_{iteration + 1}")
                 tokenizer.push_to_hub(hf_repo)
-                print(f"  Pushed checkpoint to Hub → {hf_repo}")
+                print(f"  Pushed checkpoint to Hub -> {hf_repo}")
 
     # ── Save final adapter ────────────────────────────────────────────────────
     final_path = os.path.join(ADAPTER_DIR, "final")
     model.save_pretrained(final_path)
     tokenizer.save_pretrained(final_path)
-    hf_repo = os.environ.get("HF_HUB_REPO", "DrishyaShah/clusterenv-grpo-adapter")
+    hf_repo = os.environ.get("HF_HUB_REPO", "Mephisto2412/clusterenv-grpo-adapter")
     if hf_repo:
         model.push_to_hub(hf_repo, commit_message="final")
         tokenizer.push_to_hub(hf_repo)
-        print(f"  Final adapter pushed to Hub → {hf_repo}")
+        print(f"  Final adapter pushed to Hub -> {hf_repo}")
     print()
-    print(f"Training complete. Final adapter → {final_path}")
+    print(f"Training complete. Final adapter -> {final_path}")
     print()
     print("Next steps:")
     print("  python scripts/demo_replay.py --generate --output demo_trained.json")
