@@ -26,6 +26,10 @@ import torch.nn.functional as F
 from torch.optim import AdamW
 from collections import defaultdict
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
@@ -46,7 +50,7 @@ LORA_TARGET_MODS  = [
     "gate_proj", "up_proj", "down_proj",
 ]
 
-N_ITERATIONS      = 50
+N_ITERATIONS      = int(os.environ.get("N_ITERATIONS", "50"))
 G_EPISODES        = 4         # rollouts per iteration (group size for GRPO)
 LEARNING_RATE     = 1e-5
 GRAD_CLIP         = 1.0
@@ -55,6 +59,7 @@ MAX_NEW_TOKENS    = 512
 
 CHECKPOINT_EVERY  = 10
 ADAPTER_DIR       = os.path.join(ROOT, "training", "grpo_adapter")
+LOG_FILE          = os.path.join(ROOT, "training", "grpo_training.log")
 
 
 # ── Model utilities ───────────────────────────────────────────────────────────
@@ -145,6 +150,44 @@ def compute_log_prob(
     return comp_lp.sum()
 
 
+# ── Curve saving ──────────────────────────────────────────────────────────────
+
+
+def _save_training_curves(losses: list, rewards: list) -> None:
+    iters = range(1, len(losses) + 1)
+
+    loss_path = os.path.join(ROOT, "training", "grpo_loss_curve.png")
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(iters, losses, marker="o", markersize=3)
+    ax.set_title("GRPO Loss per Iteration")
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("Loss")
+    fig.tight_layout()
+    fig.savefig(loss_path, dpi=100)
+    plt.close(fig)
+
+    reward_path = os.path.join(ROOT, "training", "grpo_reward_curve.png")
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(iters, rewards, marker="o", markersize=3, color="tab:orange")
+    ax.set_title("Mean Reward per Iteration")
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("Reward")
+    fig.tight_layout()
+    fig.savefig(reward_path, dpi=100)
+    plt.close(fig)
+
+    print(f"  Loss curve   → {loss_path}")
+    print(f"  Reward curve → {reward_path}")
+
+    hf_repo = os.environ.get("HF_HUB_REPO", "DrishyaShah/clusterenv-grpo-adapter")
+    if hf_repo:
+        from huggingface_hub import upload_file
+        for path, name in [(loss_path, "grpo_loss_curve.png"),
+                           (reward_path, "grpo_reward_curve.png")]:
+            upload_file(path_or_fileobj=path, path_in_repo=name, repo_id=hf_repo)
+        print(f"  Training curves pushed → {hf_repo}")
+
+
 # ── Training loop ─────────────────────────────────────────────────────────────
 
 
@@ -175,6 +218,10 @@ def main() -> None:
         lr = LEARNING_RATE,
     )
     os.makedirs(ADAPTER_DIR, exist_ok=True)
+
+    loss_history: list[float] = []
+    reward_history: list[float] = []
+    log_f = open(LOG_FILE, "w", buffering=1)   # line-buffered — partial runs survive
 
     # ── Main loop ─────────────────────────────────────────────────────────────
     for iteration in range(N_ITERATIONS):
@@ -218,7 +265,7 @@ def main() -> None:
             win_groups[r["window_idx"]].append(r["reward"])
         mean_group_std = float(np.mean([np.std(v) for v in win_groups.values()]))
 
-        print(
+        log_line = (
             f"[{iteration + 1:3d}/{N_ITERATIONS}]  "
             f"loss={total_loss:+.4f}  "
             f"reward={mean_reward:+.4f}  "
@@ -226,6 +273,11 @@ def main() -> None:
             f"grad={grad_norm:.3f}  "
             f"parse_fail={parse_fails}/{len(rollouts)}"
         )
+        print(log_line, flush=True)
+        log_f.write(log_line + "\n")
+
+        loss_history.append(total_loss)
+        reward_history.append(mean_reward)
 
         # Sample completion preview (first 3 iterations only)
         if iteration < 3:
@@ -238,11 +290,22 @@ def main() -> None:
             model.save_pretrained(ckpt_path)
             tokenizer.save_pretrained(ckpt_path)
             print(f"  Checkpoint saved → {ckpt_path}")
+            log_f.flush()
             hf_repo = os.environ.get("HF_HUB_REPO", "DrishyaShah/clusterenv-grpo-adapter")
             if hf_repo:
+                from huggingface_hub import upload_file
                 model.push_to_hub(hf_repo, commit_message=f"ckpt_{iteration + 1}")
                 tokenizer.push_to_hub(hf_repo)
-                print(f"  Pushed checkpoint to Hub → {hf_repo}")
+                upload_file(
+                    path_or_fileobj=LOG_FILE,
+                    path_in_repo="grpo_training.log",
+                    repo_id=hf_repo,
+                )
+                print(f"  Checkpoint + log pushed → {hf_repo}")
+
+    # ── Save curves + close log ───────────────────────────────────────────────
+    log_f.close()
+    _save_training_curves(loss_history, reward_history)
 
     # ── Save final adapter ────────────────────────────────────────────────────
     final_path = os.path.join(ADAPTER_DIR, "final")
