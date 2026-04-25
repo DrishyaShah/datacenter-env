@@ -1,56 +1,24 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# Build from repository root (required for hackathon pre-validation and full pyproject/uv.lock):
-#   docker build -t dc-openenv:latest .
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
-ARG BASE_IMAGE=ghcr.io/meta-pytorch/openenv-base:latest
-FROM ${BASE_IMAGE} AS builder
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 
-WORKDIR /app
+# python3 and python3-pip are both for Python 3.10 on Ubuntu 22.04 — no version mismatch.
+RUN apt-get update && apt-get install -y --no-install-recommends     python3 python3-dev python3-pip git &&     rm -rf /var/lib/apt/lists/* &&     ln -sf /usr/bin/python3 /usr/bin/python
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends git && \
-    rm -rf /var/lib/apt/lists/*
+# Upgrade pip + setuptools from PyPI (unsloth needs modern setuptools)
+RUN pip3 install --upgrade pip setuptools wheel
 
-ARG BUILD_MODE=in-repo
-ARG ENV_NAME=datacenter_env
+# Unsloth owns the torch version
+RUN pip3 install unsloth
 
-COPY . /app/env
-
-WORKDIR /app/env
-
-RUN if ! command -v uv >/dev/null 2>&1; then \
-        curl -LsSf https://astral.sh/uv/install.sh | sh && \
-        mv /root/.local/bin/uv /usr/local/bin/uv && \
-        mv /root/.local/bin/uvx /usr/local/bin/uvx; \
-    fi
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ -f uv.lock ]; then \
-        uv sync --frozen --no-install-project --no-editable; \
-    else \
-        uv sync --no-install-project --no-editable; \
-    fi
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    if [ -f uv.lock ]; then \
-        uv sync --frozen --no-editable; \
-    else \
-        uv sync --no-editable; \
-    fi
-
-FROM ${BASE_IMAGE}
+# All remaining deps — numpy is explicit, no version pins that can conflict with torch
+RUN pip3 install     numpy     "torchvision>=0.20"     "torchaudio>=2.0"     stable-baselines3     gymnasium     huggingface_hub     trl     accelerate     bitsandbytes     xformers
 
 WORKDIR /app
+COPY . /app
 
-COPY --from=builder /app/env/.venv /app/.venv
-COPY --from=builder /app/env /app/env
+ENV PYTHONPATH="/app:$PYTHONPATH"
+ENV PORT=7860
 
-ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONPATH="/app/env:$PYTHONPATH"
-
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-CMD ["sh", "-c", "cd /app/env && uvicorn server.app:app --host 0.0.0.0 --port 8000"]
+CMD ["python3", "training_space/run_training.py"]
