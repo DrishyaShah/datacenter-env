@@ -54,7 +54,7 @@ TEMPERATURE       = 0.7
 MAX_NEW_TOKENS    = 512
 
 CHECKPOINT_EVERY  = 10
-ADAPTER_DIR       = "training/grpo_adapter"
+ADAPTER_DIR       = os.path.join(ROOT, "training", "grpo_adapter")
 
 
 # ── Model utilities ───────────────────────────────────────────────────────────
@@ -238,11 +238,21 @@ def main() -> None:
             model.save_pretrained(ckpt_path)
             tokenizer.save_pretrained(ckpt_path)
             print(f"  Checkpoint saved → {ckpt_path}")
+            hf_repo = os.environ.get("HF_HUB_REPO", "DrishyaShah/clusterenv-grpo-adapter")
+            if hf_repo:
+                model.push_to_hub(hf_repo, commit_message=f"ckpt_{iteration + 1}")
+                tokenizer.push_to_hub(hf_repo)
+                print(f"  Pushed checkpoint to Hub → {hf_repo}")
 
     # ── Save final adapter ────────────────────────────────────────────────────
     final_path = os.path.join(ADAPTER_DIR, "final")
     model.save_pretrained(final_path)
     tokenizer.save_pretrained(final_path)
+    hf_repo = os.environ.get("HF_HUB_REPO", "DrishyaShah/clusterenv-grpo-adapter")
+    if hf_repo:
+        model.push_to_hub(hf_repo, commit_message="final")
+        tokenizer.push_to_hub(hf_repo)
+        print(f"  Final adapter pushed to Hub → {hf_repo}")
     print()
     print(f"Training complete. Final adapter → {final_path}")
     print()

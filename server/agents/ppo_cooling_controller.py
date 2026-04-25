@@ -8,6 +8,7 @@ policy sees the same input distribution it was trained on.
 
 from __future__ import annotations
 
+import os
 import numpy as np
 
 from server.agents.cooling_heuristic import CoolingHeuristic
@@ -25,7 +26,13 @@ SUPPLY_R    = 10.0
 OUTSIDE_SCALE = 45.0
 COP_SCALE   = 5.0
 
-DEFAULT_MODEL_PATH = "training/cooling_controller_best/best_model.zip"
+# Absolute path so the model loads correctly regardless of working directory
+_PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+DEFAULT_MODEL_PATH = os.path.join(
+    _PROJECT_ROOT, "training", "cooling_controller_best", "best_model.zip"
+)
 
 
 class PPOCoolingController:

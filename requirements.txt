@@ -1,11 +1,15 @@
-# Core environment
-numpy
-dataclasses-json
+# Simulation / PPO cooling controller
+numpy>=1.24
+stable-baselines3>=2.0
+gymnasium>=0.28
 
-# PPO cooling controller
-stable-baselines3
-gymnasium
-
-# GRPO training
-unsloth
-torch
+# GRPO training stack
+# NOTE: install unsloth separately in terminal BEFORE this file:
+#   pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+torch>=2.1
+transformers>=4.40
+accelerate>=0.27
+bitsandbytes>=0.43
+peft>=0.10
+huggingface_hub>=0.23
+tqdm
