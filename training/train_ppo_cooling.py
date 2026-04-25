@@ -6,7 +6,7 @@ across 4 data centre zones. The trained policy is saved and loaded as a fixed
 component during ClusterScheduler GRPO training.
 
 Stack:
-    stable-baselines3 PPO  →  gymnasium CoolingGymEnv  →  FacilityState physics
+    stable-baselines3 PPO  ->  gymnasium CoolingGymEnv  ->  FacilityState physics
 
 No LLM, no GRPO, no Person A code required.
 
@@ -41,7 +41,7 @@ from training.gym_cooling_env import CoolingGymEnv
 
 
 # ── Training configuration ────────────────────────────────────────────────────
-TOTAL_TIMESTEPS  = 150_000   # ~10-20 min on CPU; increase to 300k for better convergence
+TOTAL_TIMESTEPS  = 80_000    # 80k is sufficient — flat zone fix removes undershoot trap
 N_ENVS           = 4         # parallel environments (speeds up rollout collection)
 EVAL_FREQ        = 10_000    # evaluate every N steps
 N_EVAL_EPISODES  = 20        # episodes per evaluation run
@@ -115,7 +115,7 @@ def save_reward_plot(steps, rewards, path: str) -> None:
     plt.tight_layout()
     plt.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Reward curve saved → {path}")
+    print(f"  Reward curve saved -> {path}")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -189,10 +189,10 @@ def main():
 
     # ── Step 6: Save final model ──────────────────────────────────────────────
     model.save(FINAL_MODEL_PATH)
-    print(f"  Final model saved → {FINAL_MODEL_PATH}.zip")
+    print(f"  Final model saved -> {FINAL_MODEL_PATH}.zip")
 
     best_path = os.path.join(CHECKPOINT_DIR, "best_model")
-    print(f"  Best model saved → {best_path}.zip")
+    print(f"  Best model saved -> {best_path}.zip")
 
     # ── Step 7: Save reward curve (must be committed to repo) ─────────────────
     if reward_logger.steps_log:
@@ -255,7 +255,7 @@ def main():
     plt.tight_layout()
     plt.savefig(comp_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Comparison plot saved → {comp_path}")
+    print(f"  Comparison plot saved -> {comp_path}")
     print()
     print("Done. Commit the following files to the repo:")
     print(f"  {REWARD_PLOT_PATH}")
