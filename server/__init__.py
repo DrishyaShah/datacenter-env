@@ -6,7 +6,11 @@
 
 """Datacenter Env environment server components."""
 
-from .client import DCEnv
-from .environment import DCEnvironment
-
-__all__ = ["DCEnvironment", "DCEnv"]
+try:
+    from .client import DCEnv
+    from .environment import DCEnvironment
+    __all__ = ["DCEnvironment", "DCEnv"]
+except ImportError:
+    # openenv package not installed (training-only environment).
+    # ClusterEnvironment imports work fine without DCEnv/DCEnvironment.
+    __all__ = []
