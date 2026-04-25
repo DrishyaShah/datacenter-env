@@ -51,11 +51,11 @@ if size < 10_000:
     assert size > 10_000, f"git lfs pull failed — zip still a pointer ({size} B)"
 
 # 4. Install unsloth first (must come before transformers to avoid version conflict)
-run([sys.executable, "-m", "pip", "install", "--quiet",
+run(["uv", "pip", "install", "--quiet",
      "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"])
 
 # 5. Install remaining deps (torch, transformers, sb3, matplotlib, etc.)
-run([sys.executable, "-m", "pip", "install", "--quiet", "-r", "requirements.txt"])
+run(["uv", "pip", "install", "--quiet", "-r", "requirements.txt"])
 
 # 6. Smoke test — fail fast before spending GPU time
 run([sys.executable, "-c",
