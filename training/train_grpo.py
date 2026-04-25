@@ -40,7 +40,7 @@ from training.rollout import collect_rollouts, compute_grpo_advantages
 # -- Configuration -------------------------------------------------------------
 
 MODEL_NAME        = "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit"
-MAX_SEQ_LENGTH    = 2048
+MAX_SEQ_LENGTH    = 4096
 LOAD_IN_4BIT      = True
 
 LORA_R            = 16
