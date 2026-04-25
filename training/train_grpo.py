@@ -55,12 +55,12 @@ LORA_TARGET_MODS  = [
     "gate_proj", "up_proj", "down_proj",
 ]
 
-N_ITERATIONS      = 60        # L4 (24GB): 60 iters at ~2.5 hrs total
-G_EPISODES        = 4         # L4 has 24GB — safe to use full group size (32 samples/iter)
+N_ITERATIONS      = 60        # L40S: 60 iters at ~3.5 hrs (with speedup config)
+G_EPISODES        = 2         # 16 samples/iter — half the calls, valid GRPO signal
 LEARNING_RATE     = 1e-5
 GRAD_CLIP         = 1.0
 TEMPERATURE       = 0.7
-MAX_NEW_TOKENS    = 768       # JSON decisions can be long; 512 was cutting responses
+MAX_NEW_TOKENS    = 512       # 6 decisions × ~40 tok = ~300 tok max needed; 512 is safe
 
 CHECKPOINT_EVERY  = 10
 ADAPTER_DIR       = os.path.join(ROOT, "training", "grpo_adapter")
