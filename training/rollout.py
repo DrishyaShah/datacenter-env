@@ -71,10 +71,21 @@ def parse_decisions(
             if rid not in valid_ids:
                 continue  # hallucinated or stale id — skip silently
             try:
+                # scheduled_window may come back as a JSON string ("5"), int (5),
+                # or null/None — normalise to int or None before passing in.
+                sw_raw = e.get("scheduled_window")
+                if sw_raw is None or sw_raw == "null" or sw_raw == "":
+                    scheduled_window = None
+                else:
+                    try:
+                        scheduled_window = int(sw_raw)
+                    except (ValueError, TypeError):
+                        scheduled_window = None
+
                 dec = AdmissionDecision(
                     request_id       = rid,
                     decision         = str(e.get("decision", "")).upper(),
-                    scheduled_window = e.get("scheduled_window"),
+                    scheduled_window = scheduled_window,
                     reasoning        = str(e.get("reasoning", "")),
                 )
                 decisions.append(dec)

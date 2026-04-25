@@ -179,8 +179,11 @@ class ClusterEnvironment:
                     carbon_flexible_admitted += 1
 
             elif dec.decision == "DEFER":
-                target = dec.scheduled_window if dec.scheduled_window is not None \
-                         else self._window_idx + 1
+                try:
+                    target = int(dec.scheduled_window) if dec.scheduled_window is not None \
+                             else self._window_idx + 1
+                except (ValueError, TypeError):
+                    target = self._window_idx + 1
                 target = max(target, self._window_idx + 1)
                 target = min(target, WINDOWS_PER_EPISODE - 1)
                 self._ledger.deferred_queue.append((target, req))

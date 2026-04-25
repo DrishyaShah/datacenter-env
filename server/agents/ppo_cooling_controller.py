@@ -31,7 +31,7 @@ _PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 DEFAULT_MODEL_PATH = os.path.join(
-    _PROJECT_ROOT, "training", "cooling_controller_best", "best_model.zip"
+    _PROJECT_ROOT, "training", "cooling_controller_best", "best_model"
 )
 
 

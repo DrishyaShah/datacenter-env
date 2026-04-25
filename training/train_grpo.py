@@ -126,13 +126,18 @@ def compute_log_prob(
     """
     full_text  = prompt + completion
     prompt_ids = tokenizer(
-        prompt, return_tensors="pt", add_special_tokens=False
+        prompt, return_tensors="pt", add_special_tokens=False,
+        truncation=True, max_length=MAX_SEQ_LENGTH,
     ).input_ids
     full_ids   = tokenizer(
-        full_text, return_tensors="pt", add_special_tokens=False
+        full_text, return_tensors="pt", add_special_tokens=False,
+        truncation=True, max_length=MAX_SEQ_LENGTH,
     ).input_ids.to(model.device)
 
-    prompt_len = prompt_ids.shape[1]
+    prompt_len = min(prompt_ids.shape[1], full_ids.shape[1] - 1)
+
+    if full_ids.shape[1] <= prompt_len:
+        return torch.tensor(0.0, device=model.device, requires_grad=True)
 
     outputs   = model(full_ids)
     log_probs = torch.log_softmax(outputs.logits[:, :-1], dim=-1)  # [1, seq-1, vocab]
@@ -141,8 +146,12 @@ def compute_log_prob(
     if comp_ids.numel() == 0:
         return torch.tensor(0.0, device=model.device, requires_grad=True)
 
-    comp_lp = log_probs[0, prompt_len - 1:].gather(
-        1, comp_ids.unsqueeze(1)
+    n_comp = min(comp_ids.shape[0], log_probs.shape[1] - prompt_len + 1)
+    if n_comp <= 0:
+        return torch.tensor(0.0, device=model.device, requires_grad=True)
+
+    comp_lp = log_probs[0, prompt_len - 1: prompt_len - 1 + n_comp].gather(
+        1, comp_ids[:n_comp].unsqueeze(1)
     ).squeeze(1)
     return comp_lp.sum()
 
