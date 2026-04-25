@@ -1,19 +1,28 @@
 # OpenEnv manifest — DC cooling environment (V2)
 name: dc-openenv
-version: "2.0.0"
+version: "3.0.0"
 description: >
-  Data Centre Cooling Control — a physics-based sequential decision environment
-  for evaluating AI agents on real-world industrial control tasks.
-  Three tasks from thermal recovery (easy) to carbon-aware cascading failure triage (hard).
+  DC-OpenEnv — two complementary environments on a shared physics engine.
+  (1) DC Cooling Control: three tasks from thermal recovery to cascading failure triage
+      for evaluating LLM agents zero-shot on industrial control.
+  (2) ClusterEnv: an RLVR training environment where an LLM cluster scheduler learns
+      to allocate compute jobs across competing research teams under hard power and
+      cooling constraints. Teams misrepresent priority and deadlines; the scheduler
+      must learn to detect gaming, defer jobs to low-carbon windows, and prevent
+      power budget violations.
 author: "Team DC-OpenEnv"
 license: Apache-2.0
 tags:
   - openenv
   - data-center
   - cooling
+  - cluster-scheduling
+  - multi-agent
   - energy-efficiency
   - carbon-aware
   - safety-constrained
+  - information-asymmetry
+  - rlvr
 
 runtime: fastapi
 app: server.app:app
@@ -45,6 +54,33 @@ tasks:
       zones (zone_ai_1, zone_ai_2) even at the expense of LOW priority zones, while
       minimising carbon cost during the high-carbon window (steps ~11-22).
       40 steps × 36 min/step = 24 hr; step_scale=7.2 condenses the original 288-step arc.
+
+  # ── ClusterEnv: RLVR training environment ───────────────────────────────────
+  - id: cluster-scheduler
+    difficulty: hard
+    max_steps: 8
+    description: >
+      An LLM-driven cluster scheduler allocates compute jobs across two competing
+      research teams under a hard 900 kW facility power budget and thermal constraints.
+      Team B systematically misrepresents job priority (claims CRITICAL when true=LOW)
+      and deadline urgency (claims "urgent" when true deadline is 3–4 windows away).
+      The scheduler must learn — through GRPO reinforcement learning — to detect gaming
+      patterns, defer carbon-flexible jobs to low-carbon windows (6–7), and admit
+      workloads without violating the power budget during peak demand windows (2–4).
+
+      Episode: 8 negotiation windows × 18 physical steps (90 sim-min each) = 12 sim-hours.
+      Carbon: LOW (windows 0–1) → HIGH (windows 2–4) → MEDIUM (window 5) → LOW (windows 6–7).
+      Chiller fault at window 5 (optional, enabled by default) → supply temperature rises.
+
+      Reward (3 components):
+        R_throughput (+0.50): jobs completed before true deadline / total submitted.
+        R_thermal    (−0.35): penalty when total admitted kW exceeds 900 kW budget.
+        R_carbon     (+0.15): bonus for carbon-flexible jobs deferred to low-carbon windows.
+
+      Baselines:
+        accept_all            → 100% power violation rate (comparison baseline)
+        priority_weighted_threshold → 0% violations, 0% carbon deferral (reward zero-line)
+        trained GRPO agent    → <15% violations, >40% carbon deferral (demo target)
 
 action_space:
   type: structured

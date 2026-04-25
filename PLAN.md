@@ -24,6 +24,31 @@ Neither path depends on the other until the integration phase at Hour 6–8.
 
 ---
 
+## Sync Checkpoints At A Glance
+
+Five points where one person's output becomes the other's input.
+Each checkpoint has: what is handed off, who is blocked, and what can proceed without it.
+
+| # | Hour | Direction | What crosses the boundary | Who is blocked |
+|---|---|---|---|---|
+| **A** | 3 | B → A | `cluster_scenario.py` exports (`power_budget_violated`, `TOTAL_POWER_BUDGET_KW`) | A needs these to write `grader_cluster.py`; can stub with constants in the meantime |
+| **A** | 3 | A → B | `scripted_teams.py` interface (class names + `generate_window_requests` signature) | B needs the call signature to write the `cluster_environment.py` stub; can stub with a local placeholder |
+| **B** | 6 | Both | Full `cluster_environment.reset()` + `step()` working end-to-end | A is **hard-blocked** on GRPO training; B is hard-blocked on oversight wiring |
+| **C** | 9 | B → A | `ClusterEnvironment` importable and `step()` tested | A **cannot run training** until this is done; all of A's hours 9–17 depend on it |
+| **D** | 12 | B → A | `oversight_monitor.py` wired + oversight flags in `step()` output | A can optionally restart training with richer observation; not blocking for demo |
+| **E** | 17 | A → B | Trained checkpoint + `reward_curve.png` + `baseline_vs_trained.png` | B cannot do final demo comparison or Space model swap until A delivers these |
+
+### How to use checkpoints
+
+- When you reach a checkpoint **as the sender**: push your branch immediately and message your teammate.
+  Do not wait until the end of your block — push as soon as the deliverable compiles and smoke-tests pass.
+- When you reach a checkpoint **as the receiver**: pull the branch, run `python -c "from <module> import <thing>"` to confirm it imports,
+  then continue. Do not spend time understanding the sender's internals — just use the exported interface.
+- If a checkpoint is **late**: the receiver switches to their next independent task (see "can proceed without" column above)
+  and picks up the blocked task when the checkpoint arrives.
+
+---
+
 ## Hour 0–1: TOGETHER — Dataclasses (DONE)
 
 **Status: COMPLETE**
@@ -88,6 +113,12 @@ Team B archetypes (true values private, stated values always inflated):
 ```
 
 **Gate (end of hour 3):** Call `team_a.generate_window_requests(window_idx=3, carbon="high", rng=rng)` and `team_b.generate_window_requests(...)`. Verify each returns a list of valid `JobRequest` objects. `team_b` jobs should have `is_gaming_priority() == True` for >70% of requests.
+
+> **⚑ CHECKPOINT A — Person A sends to B (hour 3)**
+> Push `server/agents/scripted_teams.py` to branch as soon as the gate passes.
+> Person B needs the exact call signature: `generate_window_requests(window_idx: int, carbon_intensity: str, rng: random.Random) -> list[JobRequest]`
+> and the class names `CooperativeTeam` / `StrategicTeam` to wire into `cluster_environment.py`.
+> Message Person B immediately — their environment stub is blocked on this interface.
 
 ---
 
@@ -178,6 +209,16 @@ Output ONLY valid JSON — no other text:
 
 **Gate (end of hour 6):** Call `build_prompt(window_state)` with a real `WindowState` object. Print the result. Verify all fields are populated. The JSON output section must be unambiguous.
 
+> **⚑ CHECKPOINT A — Person A receives from B (pull before grader_cluster.py)**
+> Pull Person B's branch. The following imports must resolve in `grader_cluster.py`:
+> ```python
+> from server.scenarios.cluster_scenario import power_budget_violated, TOTAL_POWER_BUDGET_KW
+> ```
+> Until B's branch lands, stub: `TOTAL_POWER_BUDGET_KW = 900.0` and `power_budget_violated = lambda f: f.total_it_load_kw > 900.0`
+> **The incident metric is power budget violation, not temperature > 27°C.** The physics
+> simulation cannot produce temperature incidents through normal job loads — this was
+> verified and documented in `cluster_scenario.py` (`power_budget_violated` docstring).
+
 ---
 
 ### Person B — Physical Layer + Infrastructure
@@ -246,6 +287,14 @@ by running the rule-based "accept everything" policy for 10 episodes and checkin
 `BASELINE_INCIDENT_RATE` lands between 0.40 and 0.65.
 
 **Gate (end of hour 3):** `FacilityState.set_zone_it_load("zone_team_a_1", 320.0)` executes without error. Temperatures in zone_team_a_1 rise over 18 physical steps when load > cooling capacity. Cluster scenario config imports successfully.
+
+> **⚑ CHECKPOINT A — Person B sends to A (hour 3)**
+> Push `server/simulation.py` (cluster_mode additions) and `server/scenarios/cluster_scenario.py` to branch.
+> Person A needs these exports in `grader_cluster.py`: `power_budget_violated(facility)`, `TOTAL_POWER_BUDGET_KW`.
+> Also receive from A: `generate_window_requests(window_idx, carbon_intensity, rng) -> list[JobRequest]`
+> and class names `CooperativeTeam` / `StrategicTeam` for the `cluster_environment.py` stub.
+> If A's scripted_teams isn't ready yet, stub the interface with `team.generate_window_requests = lambda w, c, r: []`
+> and replace once A pushes.
 
 ---
 
@@ -402,6 +451,25 @@ If above 0.65: reduce peak demand or widen cooling capacity.
 
 **Do not proceed to training until this gate passes.**
 
+> **⚑ CHECKPOINT B — Integration complete (hour 8, both push)**
+> This is the hardest sync point. Both people must be present.
+>
+> **Person A delivers into this session:**
+> - `server/agents/scripted_teams.py` — both team generators working
+> - `server/graders/grader_cluster.py` — 3-component reward returning float in [-1, 1]
+> - `training/prompts.py` — `build_prompt(window_state) -> str` callable
+>
+> **Person B delivers into this session:**
+> - `server/cluster_environment.py` — `reset()` + `get_window_state()` working
+> - `server/agents/cooling_heuristic.py` — `CoolingHeuristic.step()` callable
+>
+> **Output of this session (both own):**
+> - `server/cluster_environment.py` with working `step()` — this file is the central artifact
+> - Calibration gate results (10 episode run, incident rate printed)
+>
+> After this session, push `cluster_environment.py` immediately. Person A is hard-blocked
+> on training (Checkpoint C) until `step()` is confirmed working.
+
 ---
 
 ## Hours 8–17: PARALLEL AGAIN
@@ -481,6 +549,20 @@ config = GRPOConfig(
 ```
 
 **Gate (end of hour 9):** One complete episode runs end-to-end with the LLM generating decisions. `run_episode()` returns without exceptions. Format penalty triggers correctly on deliberately malformed output.
+
+> **⚑ CHECKPOINT C — ClusterEnvironment ready (B → A, hour 9)**
+> Person A is hard-blocked on this. Before writing `rollout.py` or starting GRPO training,
+> confirm the following import works from the branch Person B pushed after the integration session:
+> ```python
+> from server.cluster_environment import ClusterEnvironment
+> env = ClusterEnvironment()
+> obs = env.reset(seed=42)
+> result = env.step([])   # empty decisions = defer all
+> assert hasattr(result, 'reward') and hasattr(result, 'done')
+> ```
+> If this passes: proceed to training immediately.
+> If B's `cluster_environment.py` is not yet pushed: write `rollout.py` and `train_grpo.py`
+> using a `MockEnvironment` stub that returns dummy rewards. Swap for the real env when available.
 
 ---
 
