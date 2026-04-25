@@ -100,6 +100,7 @@ class ZoneState:
     sensor_drift_c: float = 0.0            # cumulative sensor drift (°C)
     sensor_confidence: float = 1.0        # [0.0–1.0] reliability weight
     base_it_load_kw: float = 0.0          # baseline load before diurnal variation
+    job_load_kw: float = 0.0              # cluster mode: IT load from admitted jobs (kW)
     it_load_pct: float = 0.0              # normalised load [0–1]
     thermal_mass_kj_per_k: float = 850.0  # room thermal mass (kJ/K); scale per zone size
 
@@ -227,6 +228,7 @@ class FacilityState:
     pid_baseline_pue: float = 1.55             # pre-computed PID reference PUE
     grid_carbon_intensity_normalized: float = 0.5  # [0–1] numeric companion
     minutes_per_step: float = 5.0                  # sim minutes per env step; set by environment.py for timeline condensation
+    cluster_mode: bool = False                     # when True, bypass diurnal load curve; loads come from admitted jobs
 
     # ── Convenience constants ─────────────────────────────────────────────────
     _BASE_CHILLER_COP: float = field(default=3.5, init=False, repr=False)
@@ -291,9 +293,20 @@ class FacilityState:
 
     def advance_load(self):
         """
-        Update IT load per zone based on the diurnal curve plus random
-        Poisson batch-job arrivals (±5 % burst).
+        Update IT load per zone.
+
+        Standard mode: diurnal curve × base_it_load_kw + random batch burst.
+        Cluster mode:  base_it_load_kw (fixed baseline, e.g. inference always on)
+                       + job_load_kw (set each window by ClusterEnvironment from
+                       EpisodeLedger.active_load_kw). No diurnal curve applied.
         """
+        if self.cluster_mode:
+            for zone in self.zones:
+                zone.it_load_kw = round(zone.base_it_load_kw + zone.job_load_kw, 2)
+                peak = max(zone.base_it_load_kw + zone.job_load_kw, zone.base_it_load_kw, 1.0)
+                zone.it_load_pct = round(min(zone.it_load_kw / peak, 1.5), 4)
+            return
+
         if not self.load_curve:
             return
 
@@ -311,6 +324,33 @@ class FacilityState:
             )
             peak = max(zone.base_it_load_kw, 1.0)
             zone.it_load_pct = round(min(zone.it_load_kw / peak, 1.0), 4)
+
+    # ── Cluster mode: job load injection ─────────────────────────────────────
+
+    def set_zone_job_load(self, zone_id: str, job_load_kw: float) -> None:
+        """
+        Set the admitted-job IT load for a single zone.
+        Called by ClusterEnvironment when a job is admitted to or expires from a zone.
+        Only meaningful when cluster_mode=True.
+        """
+        for zone in self.zones:
+            if zone.zone_id == zone_id:
+                zone.job_load_kw = max(0.0, round(job_load_kw, 2))
+                return
+
+    def set_all_job_loads(self, load_map: Dict[str, float]) -> None:
+        """
+        Set admitted-job IT load for all zones in one call.
+        load_map: {zone_id: job_load_kw}. Zones absent from the map are set to 0.
+        Called by ClusterEnvironment at the start of each negotiation window.
+        Only meaningful when cluster_mode=True.
+        """
+        for zone in self.zones:
+            zone.job_load_kw = max(0.0, round(load_map.get(zone.zone_id, 0.0), 2))
+
+    def total_job_load_kw(self) -> float:
+        """Sum of all admitted job loads across zones (cluster mode)."""
+        return sum(z.job_load_kw for z in self.zones)
 
     # ── Carbon advancement ────────────────────────────────────────────────────
 
