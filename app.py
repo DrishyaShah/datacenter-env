@@ -1,5 +1,5 @@
 """
-ClusterEnv GRPO Training — Gradio Space launcher.
+RL Environment for Datacenter Cooling and Operations — GRPO Training — Gradio Space launcher.
 
 Starts training in a background thread immediately on Space startup.
 Gradio keeps the Space healthy (port 7860 responding) while training runs.
@@ -95,9 +95,9 @@ def get_status() -> tuple[str, str]:
     return header, log
 
 
-with gr.Blocks(title="ClusterEnv GRPO Training") as demo:
+with gr.Blocks(title="RL Environment for Datacenter Cooling and Operations — GRPO Training") as demo:
     gr.Markdown(
-        "## ClusterEnv GRPO Scheduler Training\n\n"
+        "## RL Environment for Datacenter Cooling and Operations — GRPO Scheduler Training\n\n"
         "Training runs in the background. "
         "Checkpoints pushed to [Mephisto2412/clusterenv-grpo-adapter]"
         "(https://huggingface.co/Mephisto2412/clusterenv-grpo-adapter) "

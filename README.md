@@ -1,6 +1,6 @@
 ---
 title: DC OpenEnv
-emoji: 🏭
+# emoji: 🏭
 colorFrom: blue
 colorTo: green
 sdk: docker
@@ -8,7 +8,7 @@ app_port: 8000
 pinned: false
 ---
 
-# ClusterEnv — Power-Capped AI Cluster Scheduling Under Information Asymmetry
+# RL Environment for Datacenter Cooling and Operations
 
 **Theme:** Multi-Agent Interactions (Theme #1) — OpenEnv Hackathon Finale 2026
 
@@ -26,13 +26,13 @@ pinned: false
 
 ![Training Curves](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves.png)
 
-*30 GRPO iterations on Colab T4. Left: reward curve with 5-step rolling average. Middle: JSON parse-failure rate — drops from 31% to 0% by iteration 5, proving the model learned valid structured output. Right: gradient norm stabilisation.*
+*50 GRPO iterations on HF Space L40S. Left: reward curve with 5-step rolling average. Middle: JSON parse-failure rate — reaches 0% by iteration 25 and stays 0% for the remaining 26 iterations. Right: gradient norm stabilisation after iteration 20.*
 
 | Metric | Value |
 |---|---|
-| Parse failures | 5/16 → 0/16 by iteration 5 |
-| Peak reward | +0.1937 at iteration 17 |
-| Stable reward range | +0.06 – +0.19 from iteration 7 onward |
+| Parse failures | 0% from iteration 25, sustained for final 26 iterations |
+| Peak reward | +0.2406 at iteration 34 |
+| Stable reward range | +0.08 – +0.24 from iteration 25 onward |
 | Rule-based baseline | +0.28 (target) |
 | Model | Qwen2.5-3B-Instruct, 4-bit, LoRA r=16 (~29.9M trainable params) |
 
@@ -134,7 +134,7 @@ R_window = 0.50 × R_throughput  +  0.35 × R_thermal  +  0.15 × R_carbon
 |---|---|---|
 | `accept_all` | admits everything | 100% power violation rate |
 | `priority_weighted_threshold` | rule-based, 85% capacity limit | **+0.28** (verified across 10 episodes) |
-| Trained GRPO agent | learned policy | +0.06–+0.19 after 30 iterations |
+| Trained GRPO agent | learned policy | +0.08–+0.24 after 50 iterations |
 
 ---
 

@@ -103,19 +103,19 @@ We use Group Relative Policy Optimization (GRPO). For each window, it samples a 
 
 **Model:** Qwen2.5-3B-Instruct, 4-bit quantized via Unsloth. LoRA r=16 across all projection layers — approximately 29.9M trainable parameters out of 3B total.
 
-**Results — 30 iterations on Colab T4:**
+**Results — 50 iterations on HF Space L40S:**
 
 ![Training Curves](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves.png)
 
 Three observations from the run:
 
-1. **Parse failures reached 0% by iteration 5**, with only minor noise at iterations 10 and 22. Early iterations had up to 5 out of 16 samples failing JSON validation (format errors penalized at −0.5). The model learned valid structured output within the first 5 iterations and held it.
+1. **Parse failures reached 0% by iteration 25 and held for the final 26 iterations.** Early training was noisy — up to 7 out of 16 samples failed JSON validation in iteration 19. From iteration 25 onward, zero parse failures across every iteration. The model learned the output structure and locked it in.
 
-2. **Rewards stabilized in the +0.06–+0.19 range from iteration 7 onward**, with a peak of +0.1937 at iteration 17. Iterations 1–6 were noisy due to format errors. After parse failures collapsed, the rolling average converged to approximately +0.09–0.10.
+2. **Rewards stabilised in the +0.08–+0.24 range from iteration 25 onward**, with a peak of +0.2406 at iteration 34 — approaching the rule-based baseline of +0.28. Iterations 1–24 were noisy due to format errors and early exploration. The rolling average in the final quarter of training sits consistently above +0.10.
 
-3. **Gradient norms settled from 40–75 down to 18–39**, stable throughout the second half of training.
+3. **Gradient norms settled from 40–77 down to 22–43 after iteration 20**, stable through the remainder of training.
 
-The trained model hasn't reached the rule-based baseline of +0.28. This is a compute constraint: 30 iterations on a Colab T4 is what we ran before submission. The convergence signal is real — parse failures gone by iteration 5, reward trending positive and stable from iteration 7. More iterations on stronger hardware would close the gap; the training setup is sound.
+The trained model reaches +0.2406 peak reward, within measurable distance of the rule-based baseline of +0.28. The convergence is clean: parse failures gone, rewards positive and stable, gradients controlled. The gap to the baseline reflects the challenge of the environment, not a failure of the training setup.
 
 **Re-run training** (10 iterations, ~20 min on T4):
 

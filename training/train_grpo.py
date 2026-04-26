@@ -7,7 +7,7 @@ each negotiation window. Cooling is handled by the pre-trained PPO controller.
 Stack:
     Unsloth FastLanguageModel  ->  ClusterEnvironment  ->  GRPO loss
 
-Usage (HuggingFace Spaces A10G or local GPU):
+Usage (Colab T4, HuggingFace Spaces, or any local GPU):
     python training/train_grpo.py
 
 Output:
@@ -43,8 +43,6 @@ from training.rollout import collect_rollouts, compute_grpo_advantages
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-# Budget-aware config: Qwen2.5-3B fits on T4/A10G and costs ~$2-4/run vs ~$10/run for 8B.
-# With $30 budget this gives 8-10 trials instead of 3. Switch back to 8B for final run.
 MODEL_NAME        = "unsloth/Qwen2.5-3B-Instruct-bnb-4bit"
 MAX_SEQ_LENGTH    = 4096      # our prompts exceed 2048; do not lower this
 LOAD_IN_4BIT      = True
@@ -56,12 +54,12 @@ LORA_TARGET_MODS  = [
     "gate_proj", "up_proj", "down_proj",
 ]
 
-N_ITERATIONS      = 50        # 50 iters at ~3.5 hrs on L40S
+N_ITERATIONS      = 50        # Blog submission used 30 on Colab T4 (~2.5 hrs); 50 for extended runs
 G_EPISODES        = 2         # 16 samples/iter — half the calls, valid GRPO signal
 LEARNING_RATE     = 1e-5
 GRAD_CLIP         = 1.0
 TEMPERATURE       = 0.7
-MAX_NEW_TOKENS    = 512       # 6 decisions × ~40 tok = ~300 tok max needed; 512 is safe
+MAX_NEW_TOKENS    = 768       # matches Colab notebook and Blog; provides headroom for longer reasoning
 
 CHECKPOINT_EVERY  = 10
 ADAPTER_DIR       = os.path.join(ROOT, "training", "grpo_adapter")
@@ -71,7 +69,7 @@ ADAPTER_DIR       = os.path.join(ROOT, "training", "grpo_adapter")
 
 
 def load_model():
-    """Load Llama-3.1-8B-Instruct with Unsloth + LoRA."""
+    """Load Qwen2.5-3B-Instruct (4-bit) with Unsloth + LoRA."""
     from unsloth import FastLanguageModel
 
     model, tokenizer = FastLanguageModel.from_pretrained(
@@ -184,14 +182,14 @@ def _save_training_plots(rewards: list[float], losses: list[float]) -> None:
                     label="rule-based baseline (+0.28)")
         ax1.set_xlabel("Iteration")
         ax1.set_ylabel("Mean episode reward")
-        ax1.set_title("GRPO Reward Curve — ClusterEnv Scheduler")
+        ax1.set_title("GRPO Reward Curve — RL Environment for Datacenter Cooling and Operations")
         ax1.legend()
         ax1.grid(True, alpha=0.3)
 
         ax2.plot(iters, losses, color="#F44336", linewidth=2, marker="o", markersize=4)
         ax2.set_xlabel("Iteration")
         ax2.set_ylabel("GRPO loss")
-        ax2.set_title("GRPO Loss Curve — ClusterEnv Scheduler")
+        ax2.set_title("GRPO Loss Curve — RL Environment for Datacenter Cooling and Operations")
         ax2.grid(True, alpha=0.3)
 
         plt.tight_layout()
@@ -230,7 +228,8 @@ def main() -> None:
     from unsloth import FastLanguageModel
 
     print("=" * 60)
-    print("ClusterEnv GRPO Scheduler Training")
+    print("RL Environment for Datacenter Cooling and Operations")
+    print("GRPO Scheduler Training")
     print("=" * 60)
     print(f"  Model          : {MODEL_NAME}")
     print(f"  LoRA r         : {LORA_R}  alpha={LORA_ALPHA}")
