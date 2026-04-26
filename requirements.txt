@@ -1,6 +1,6 @@
 # Gradio Space requirements — HF installs these via pip on startup
 # torch is installed by unsloth (it picks the right CUDA version automatically)
-pyaudioop        # Python 3.13 removed audioop; pydub (gradio dep) needs this
+audioop-lts      # Python 3.13 removed audioop; pydub (gradio dep) needs this backport
 gradio>=4.0
 unsloth
 numpy
