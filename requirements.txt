@@ -1,12 +1,13 @@
-# Gradio Space requirements — HF installs these via pip on startup
-# torch is installed by unsloth (it picks the right CUDA version automatically)
-audioop-lts      # Python 3.13 removed audioop; pydub (gradio dep) needs this backport
-gradio>=4.0
+# Gradio Space requirements
+# Rules:
+#   - DO NOT add gradio here (HF installs it from sdk_version in README frontmatter)
+#   - DO NOT add huggingface_hub here (HF base image installs huggingface-hub>=0.30)
+#   - DO NOT add torch here (unsloth owns the torch version)
+audioop-lts           # Python 3.13 removed audioop; pydub needs this backport
 unsloth
 numpy
 stable-baselines3
 gymnasium
-huggingface_hub
 trl
 accelerate
 bitsandbytes

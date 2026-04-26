@@ -96,8 +96,9 @@ with gr.Blocks(title="ClusterEnv GRPO Training") as demo:
     refresh_btn = gr.Button("Refresh logs")
     refresh_btn.click(fn=get_status, outputs=[status_box, log_box])
 
-    # Auto-refresh every 30 seconds
-    demo.load(fn=get_status, outputs=[status_box, log_box], every=30)
+    # Auto-refresh every 30 seconds (gr.Timer is the Gradio 5 API)
+    timer = gr.Timer(value=30)
+    timer.tick(fn=get_status, outputs=[status_box, log_box])
 
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
