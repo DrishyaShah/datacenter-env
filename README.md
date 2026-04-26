@@ -8,7 +8,31 @@ app_port: 8000
 pinned: false
 ---
 
-# DC-OpenEnv: Data Centre Cooling Environment
+# ClusterEnv — Power-Capped AI Cluster Scheduling Under Information Asymmetry
+
+**Theme:** Multi-Agent Interactions (Theme #1) — OpenEnv Hackathon Finale 2026
+
+| | |
+|---|---|
+| **Environment Space** | [Mephisto2412/datacenter-env](https://huggingface.co/spaces/Mephisto2412/datacenter-env) |
+| **Trained Adapter** | [Mephisto2412/clusterenv-grpo-adapter](https://huggingface.co/Mephisto2412/clusterenv-grpo-adapter) |
+| **Training Notebook** | [train_grpo_colab.ipynb](training/train_grpo_colab.ipynb) |
+| **Mini-Blog** | [BLOG.md](BLOG.md) |
+
+---
+
+## Training Results
+
+![Training Curves](training/grpo_training_curves.png)
+
+*41 GRPO iterations on Colab T4. Left: reward (rolling avg in blue). Middle: JSON parse-failure rate — drops from 18.75% → 0%, proving the model learned structured output. Right: gradient norm stabilisation.*
+
+Key numbers:
+- Parse failures: **3/16 → 0/16** (100% reduction by iteration 16)
+- Reward: **−0.08 → +0.10–0.17** (stable positive convergence)
+- Rule-based baseline: **+0.28** (target for continued training)
+
+---
 
 An **OpenEnv-compliant reinforcement learning environment** for evaluating LLM agents on data centre cooling control. Built for the OpenEnv Hackathon — three progressively harder tasks challenge an agent to maintain thermal safety, minimise energy waste, and respond to realistic failures across a condensed 24-hour simulation.
 
