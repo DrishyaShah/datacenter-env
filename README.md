@@ -24,7 +24,7 @@ pinned: false
 
 ## Training Results
 
-![Training Curves](training/grpo_training_curves.png)
+![Training Curves](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves.png)
 
 *41 GRPO iterations on Colab T4. Left: reward (rolling avg in blue). Middle: JSON parse-failure rate — drops from 18.75% → 0%, proving the model learned structured output. Right: gradient norm stabilisation.*
 
