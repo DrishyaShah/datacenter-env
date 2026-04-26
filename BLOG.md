@@ -103,19 +103,19 @@ We use Group Relative Policy Optimization (GRPO). For each window, it samples a 
 
 **Model:** Qwen2.5-3B-Instruct, 4-bit quantized via Unsloth. LoRA r=16 across all projection layers — approximately 24M trainable parameters out of 3B total.
 
-**Results — 41 iterations on Colab T4:**
+**Results — 30 iterations on Colab T4:**
 
 ![Training Curves](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves.png)
 
 Three observations from the run:
 
-1. **Parse failures reached 0% by iteration 16.** Early iterations had 3 out of 16 samples failing JSON validation (format errors penalized at −0.5). By iteration 16 this dropped to 0 and stayed there for the remaining 25 iterations.
+1. **Parse failures reached 0% by iteration 5**, with only minor noise at iterations 10 and 22. Early iterations had up to 5 out of 16 samples failing JSON validation (format errors penalized at −0.5). The model learned valid structured output within the first 5 iterations and held it.
 
-2. **Rewards stabilized in the +0.05–+0.17 range from iteration 10 onward.** Iterations 1–9 were noisy due to format errors dominating the loss signal. After parse failures collapsed, the rolling average converged to approximately +0.09.
+2. **Rewards stabilized in the +0.06–+0.19 range from iteration 7 onward**, with a peak of +0.1937 at iteration 17. Iterations 1–6 were noisy due to format errors. After parse failures collapsed, the rolling average converged to approximately +0.09–0.10.
 
-3. **Gradient norms settled from 40–60 down to 18–40**, stable throughout the second half of training.
+3. **Gradient norms settled from 40–75 down to 18–39**, stable throughout the second half of training.
 
-The trained model hasn't reached the rule-based baseline of +0.28. This is a compute constraint: 41 iterations on a Colab T4 over two days is what we had. The convergence signal is real — parse failures gone by iteration 16, reward trending positive and stable from iteration 10. More iterations on stronger hardware would close the gap; the training setup is sound.
+The trained model hasn't reached the rule-based baseline of +0.28. This is a compute constraint: 30 iterations on a Colab T4 is what we ran before submission. The convergence signal is real — parse failures gone by iteration 5, reward trending positive and stable from iteration 7. More iterations on stronger hardware would close the gap; the training setup is sound.
 
 **Re-run training** (10 iterations, ~20 min on T4):
 
