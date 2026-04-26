@@ -16,14 +16,15 @@ pinned: false
 |---|---|
 | **Environment Space** | [Mephisto2412/datacenter-env](https://huggingface.co/spaces/Mephisto2412/datacenter-env) |
 | **Trained Adapter** | [Mephisto2412/clusterenv-grpo-adapter](https://huggingface.co/Mephisto2412/clusterenv-grpo-adapter) |
-| **Training Notebook** | [train_grpo_colab.ipynb](training/train_grpo_colab.ipynb) |
+| **Training Notebook (Colab)** | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DrishyaShah/datacenter-env/blob/arhaan/finale-v1/training/train_grpo_colab.ipynb) |
 | **Mini-Blog** | [BLOG.md](BLOG.md) |
+| **GitHub Repo** | [DrishyaShah/datacenter-env](https://github.com/DrishyaShah/datacenter-env/tree/arhaan/finale-v1) |
 
 ---
 
 ## Training Results
 
-![Training Curves](training/grpo_training_curves.png)
+![Training Curves](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves.png)
 
 *41 GRPO iterations on Colab T4. Left: reward (rolling avg in blue). Middle: JSON parse-failure rate — drops from 18.75% → 0%, proving the model learned structured output. Right: gradient norm stabilisation.*
 

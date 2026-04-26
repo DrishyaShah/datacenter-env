@@ -66,6 +66,19 @@ def _run_training() -> None:
         traceback.print_exc()
 
 
+# Self-ping loop: HF sleeps Spaces with no HTTP traffic; this prevents that.
+def _keepalive() -> None:
+    import urllib.request
+    time.sleep(60)  # let Gradio start first
+    while True:
+        try:
+            urllib.request.urlopen("http://127.0.0.1:7860/", timeout=5)
+        except Exception:
+            pass
+        time.sleep(45)  # ping every 45 s — well under any inactivity threshold
+
+threading.Thread(target=_keepalive, daemon=True).start()
+
 # Start training immediately in background
 _thread = threading.Thread(target=_run_training, daemon=False)
 _thread.start()
