@@ -26,3 +26,12 @@ Thumbs.db
 .vscode/
 .idea/
 .claude/
+
+# Internal planning and design docs — not for submission
+PLAN.md
+SYSTEM_DESIGN.md
+SYS_DESIGN_1.md
+NEW_GUIDELINES.txt
+FINAL_SUBMISSION_GUIDELINES.pdf
+colab_41_iterations.txt
+*.jsonl
