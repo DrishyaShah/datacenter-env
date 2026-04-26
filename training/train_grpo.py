@@ -202,6 +202,26 @@ def _save_training_plots(rewards: list[float], losses: list[float]) -> None:
         print(f"  Could not save plots: {e}")
 
 
+# ── Hub push helper (non-fatal) ───────────────────────────────────────────────
+
+
+def _try_push_to_hub(model, tokenizer, commit_tag: str) -> None:
+    hf_repo  = os.environ.get("HF_HUB_REPO", "Mephisto2412/clusterenv-grpo-adapter")
+    hf_token = os.environ.get("HF_TOKEN")
+    if not hf_repo:
+        return
+    if not hf_token:
+        print(f"  HF_TOKEN not set — skipping Hub push for {commit_tag}. "
+              "Add HF_TOKEN in Space Settings → Variables and secrets.")
+        return
+    try:
+        model.push_to_hub(hf_repo, token=hf_token, commit_message=commit_tag)
+        tokenizer.push_to_hub(hf_repo, token=hf_token)
+        print(f"  Pushed {commit_tag} -> {hf_repo}")
+    except Exception as e:
+        print(f"  Hub push failed ({e}) — local checkpoint retained, training continues.")
+
+
 # ── Training loop ─────────────────────────────────────────────────────────────
 
 
@@ -320,21 +340,13 @@ def main() -> None:
             model.save_pretrained(ckpt_path)
             tokenizer.save_pretrained(ckpt_path)
             print(f"  Checkpoint saved -> {ckpt_path}")
-            hf_repo = os.environ.get("HF_HUB_REPO", "Mephisto2412/clusterenv-grpo-adapter")
-            if hf_repo:
-                model.push_to_hub(hf_repo, commit_message=f"ckpt_{iteration + 1}")
-                tokenizer.push_to_hub(hf_repo)
-                print(f"  Pushed checkpoint to Hub -> {hf_repo}")
+            _try_push_to_hub(model, tokenizer, f"ckpt_{iteration + 1}")
 
     # ── Save final adapter ────────────────────────────────────────────────────
     final_path = os.path.join(ADAPTER_DIR, "final")
     model.save_pretrained(final_path)
     tokenizer.save_pretrained(final_path)
-    hf_repo = os.environ.get("HF_HUB_REPO", "Mephisto2412/clusterenv-grpo-adapter")
-    if hf_repo:
-        model.push_to_hub(hf_repo, commit_message="final")
-        tokenizer.push_to_hub(hf_repo)
-        print(f"  Final adapter pushed to Hub -> {hf_repo}")
+    _try_push_to_hub(model, tokenizer, "final")
     # ── Save training curves as PNG (required by submission checklist) ────────
     _save_training_plots(reward_log, loss_log)
 
