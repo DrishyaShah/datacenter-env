@@ -101,7 +101,7 @@ We use Group Relative Policy Optimization (GRPO). For each window, it samples a 
 
 ## Training the Scheduler
 
-**Model:** Qwen2.5-3B-Instruct, 4-bit quantized via Unsloth. LoRA r=16 across all projection layers — approximately 24M trainable parameters out of 3B total.
+**Model:** Qwen2.5-3B-Instruct, 4-bit quantized via Unsloth. LoRA r=16 across all projection layers — approximately 29.9M trainable parameters out of 3B total.
 
 **Results — 30 iterations on Colab T4:**
 

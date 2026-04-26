@@ -1,7 +1,7 @@
 """
 GRPO training script for the ClusterEnv LLM scheduler.
 
-Trains Llama-3.1-8B-Instruct (4-bit, LoRA r=16) to issue admission decisions
+Trains Qwen2.5-3B-Instruct (4-bit, LoRA r=16) to issue admission decisions
 each negotiation window. Cooling is handled by the pre-trained PPO controller.
 
 Stack:
