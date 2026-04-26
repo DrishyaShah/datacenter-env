@@ -233,11 +233,30 @@ def main() -> None:
     )
     os.makedirs(ADAPTER_DIR, exist_ok=True)
 
+    # ── Resume from latest checkpoint if one exists ───────────────────────────
+    start_iteration = 0
+    existing_ckpts = sorted([
+        d for d in os.listdir(ADAPTER_DIR)
+        if d.startswith("ckpt_") and os.path.isdir(os.path.join(ADAPTER_DIR, d))
+    ], key=lambda x: int(x.split("_")[1]))
+    if existing_ckpts:
+        last_ckpt = existing_ckpts[-1]
+        last_iter = int(last_ckpt.split("_")[1])
+        ckpt_path = os.path.join(ADAPTER_DIR, last_ckpt)
+        print(f"  Resuming from checkpoint {last_ckpt} ({ckpt_path})")
+        from peft import PeftModel
+        model.load_adapter(ckpt_path, adapter_name="default")
+        start_iteration = last_iter
+        print(f"  Starting from iteration {start_iteration + 1}/{N_ITERATIONS}")
+    else:
+        print("  No checkpoint found — starting from scratch.")
+    print()
+
     reward_log: list[float] = []
     loss_log:   list[float] = []
 
     # ── Main loop ─────────────────────────────────────────────────────────────
-    for iteration in range(N_ITERATIONS):
+    for iteration in range(start_iteration, N_ITERATIONS):
         base_seed = iteration * G_EPISODES
 
         # — Rollout phase (inference, no gradient) —

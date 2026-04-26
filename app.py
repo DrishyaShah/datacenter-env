@@ -17,6 +17,8 @@ if ROOT not in sys.path:
 
 import gradio as gr
 
+N_ITERATIONS = 60  # must match training/train_grpo.py
+
 _status  = {"state": "starting", "iteration": 0, "reward": 0.0, "log": []}
 _started = threading.Event()
 
@@ -76,7 +78,7 @@ def get_status() -> tuple[str, str]:
     it    = _status["iteration"]
     rew   = _status["reward"]
     log   = "\n".join(_status["log"][-50:])  # last 50 lines
-    header = f"State: {state} | Iteration: {it}/60 | Last reward: {rew:+.4f}"
+    header = f"State: {state} | Iteration: {it}/{N_ITERATIONS} | Last reward: {rew:+.4f}"
     return header, log
 
 
