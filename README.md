@@ -9,7 +9,7 @@ pinned: false
 
 # RL Environment for Datacenter Cooling and Operations
 
-**Theme:** World Modeling — Professional Tasks (Theme #3.1) — OpenEnv Hackathon Finale 2026
+**Themes:** Multi-Agent Interactions (Theme #1) · World Modeling / Professional Tasks (Theme #3.1) — Meta × HuggingFace × Scaler OpenEnv Hackathon Finale 2026
 
 | | |
 |---|---|
