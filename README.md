@@ -69,86 +69,9 @@ We ran GRPO training twice using the same model, hyperparameters, and environmen
 
 **Episode:** 8 negotiation windows × 18 physical steps = 144 total steps · 12 simulated hours per episode
 
-```mermaid
-graph TD
-    classDef ext   fill:#EDE7F6,stroke:#673AB7,color:#212121
-    classDef team  fill:#E3F2FD,stroke:#1565C0,color:#212121
-    classDef llm   fill:#FCE4EC,stroke:#C62828,color:#212121
-    classDef ppo   fill:#E8F5E9,stroke:#2E7D32,color:#212121
-    classDef equip fill:#E0F2F1,stroke:#00695C,color:#212121
-    classDef rwd   fill:#FFF8E1,stroke:#E65100,color:#212121
-    classDef mon   fill:#FFF9C4,stroke:#F57F17,color:#212121
+![ClusterEnv System Architecture](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/system-architecture.png)
 
-    subgraph EXT["⚡ External Environment"]
-        CARB(["Carbon Grid\nlow → high → low\nacross 8-window schedule"])
-        WEATH(["Weather\nOutside Temp + Wet Bulb"])
-    end
-
-    subgraph TEAMS["👥 Competing Teams  (scripted agents)"]
-        TA["Team A — Cooperative\n✓ Honest priority & deadlines\n✓ True carbon flexibility\n✓ 8 real job archetypes"]
-        TB["Team B — Strategic\n✗ Priority inflated +1–2 levels\n✗ Deadline always urgent\n✗ Hides carbon flex 60% of time"]
-    end
-
-    subgraph LLM_BOX["🧠 LLM Scheduler  ·  Qwen2.5-3B  ·  GRPO-trained"]
-        OBS["Window Observation\n──────────────────────────\nJob requests  stated metadata only\nTeam history and oversight flags\nPower headroom remaining kW\nCarbon intensity + 3-window forecast\nThermal zone summary"]
-        DEC(["⚖️ Admission Decision\nACCEPT  ·  REJECT  ·  DEFER"])
-    end
-
-    subgraph OM_BOX["🔍 Oversight Monitor  rule-based"]
-        OM["4 Detectors — runs after every window\nPriority inflation   conf. 0.62 to 0.97\nDeadline compression\nCarbon gaming\nPattern escalation  3+ windows"]
-    end
-
-    subgraph FACILITY["🏭 Datacenter Facility  —  900 kW Hard Budget"]
-        ZONES["Compute Zones\nIT Load kW = f admitted jobs"]
-
-        subgraph COOLING["❄️ Cooling Equipment"]
-            CHILL["Chiller\nCOP = f outside temp\nSetpoint 6–15°C\nFault at window 5"]
-            FANS["CRAC Fans\nSpeed 0–100%"]
-            SUPPLY["Supply Air Vents\nSetpoint 16–26°C"]
-        end
-
-        PHYS["Thermal Physics Engine\nΔT = heat_in − heat_out / thermal_mass\n18 steps per negotiation window"]
-    end
-
-    subgraph PPO_BOX["🤖 PPO Cooling Controller  ·  SB3  ·  pre-trained"]
-        PPO["MLP Policy\nObserves zone temps, IT load, weather\nControls fan speed + chiller setpoint"]
-    end
-
-    subgraph RWD_BOX["🎯 Reward  per window"]
-        RWD["R = 0.50 x throughput\n    minus 0.35 x thermal_violation\n    + 0.15 x carbon_efficiency\nRange  minus 0.35 to plus 0.65"]
-    end
-
-    TA  -->|"honest job requests"| OBS
-    TB  -->|"inflated claims"| OBS
-    CARB --> OBS
-    WEATH --> PHYS
-
-    OBS --> DEC
-    DEC -->|"admitted jobs to IT load"| ZONES
-
-    ZONES --> PHYS
-    PHYS -->|"zone temps + IT load"| PPO
-    PPO -->|"fan speed"| FANS
-    PPO -->|"chiller setpoint"| CHILL
-    CHILL --> SUPPLY
-    FANS  --> SUPPLY
-    SUPPLY --> PHYS
-    PHYS  -->|"thermal summary"| OBS
-
-    TB  -.->|"ground truth hidden from scheduler"| OM
-    OM  -->|"flags injected next window obs"| OBS
-
-    DEC  --> RWD
-    PHYS -->|"power budget violated"| RWD
-
-    class CARB,WEATH ext
-    class TA,TB team
-    class OBS,DEC llm
-    class PPO ppo
-    class CHILL,FANS,SUPPLY equip
-    class RWD rwd
-    class OM mon
-```
+*System architecture: Team A and Team B submit job requests to the LLM Scheduler (Qwen2.5-3B, GRPO-trained), which issues ACCEPT/REJECT/DEFER decisions per window. Admitted jobs flow through the Economic Layer to the PPO Cooling Controller (SB3, pre-trained), which runs 18 physical simulation steps per window. The OversightMonitor compares stated vs. ground-truth metadata and injects gaming flags into the next window's observation. The window reward (50% throughput + 35% thermal + 15% carbon) closes the GRPO training loop.*
 
 ---
 

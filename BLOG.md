@@ -46,6 +46,10 @@ Separating these two isn't a workaround — it's the correct decomposition. Each
 
 With the physics engine proven and the PPO cooling controller pre-trained, the Finale round extends the environment into a full datacenter operations simulator. We built a richer scheduling environment on top of the same physics engine.
 
+![ClusterEnv System Architecture](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/system-architecture.png)
+
+*System architecture: Team A and Team B submit job requests to the LLM Scheduler (Qwen2.5-3B, GRPO-trained), which issues ACCEPT/REJECT/DEFER decisions per window. Admitted jobs flow through the Economic Layer to the PPO Cooling Controller (SB3, pre-trained), which runs 18 physical simulation steps per window. The OversightMonitor compares stated vs. ground-truth metadata and injects gaming flags into the next window's observation. The window reward (50% throughput + 35% thermal + 15% carbon) closes the GRPO training loop.*
+
 **Episode structure:** 8 negotiation windows per episode. Each window is backed by 18 physical simulation steps — admission decisions directly affect IT load, which affects zone temperatures during those steps. A power budget violation during physical simulation triggers a reward penalty on the scheduler.
 
 **What the scheduler observes each window:**
