@@ -60,7 +60,7 @@ class ClusterGrader:
     # Measured over 10 episodes (tests/test_cluster.py calibration gate).
     # priority_weighted_threshold is safe (0% incidents) but suboptimal on
     # throughput and carbon. Trained agent must beat these scores.
-    # Note: accept_all has 92% incident rate — that's the "naive" upper bound.
+    # Note: accept_all has ~100% incident rate (every peak window violates the 900 kW budget).
     BASELINE_INCIDENT_RATE:   float = 0.00   # rule-based avoids violations; LLM target <15%
     BASELINE_THROUGHPUT:      float = 0.54
     BASELINE_CARBON_DEFERRAL: float = 0.06

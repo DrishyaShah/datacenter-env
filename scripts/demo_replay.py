@@ -1,5 +1,5 @@
 """
-ClusterEnv demo recording and replay tool.
+RL Environment for Datacenter Cooling and Operations — demo recording and replay tool.
 
 Usage:
     # Generate baseline episode recording
@@ -74,7 +74,7 @@ def replay(recording: dict, label: str = "") -> None:
     windows = recording.get("windows", [])
 
     print(DIV)
-    header = "CLUSTERENV EPISODE REPLAY"
+    header = "RL ENVIRONMENT FOR DATACENTER COOLING AND OPERATIONS — EPISODE REPLAY"
     if label:
         header += f" — {label}"
     print(header)
@@ -123,7 +123,7 @@ def replay(recording: dict, label: str = "") -> None:
 def compare(baseline: dict, trained: dict) -> None:
     """Side-by-side comparison of two episode recordings."""
     print(DIV)
-    print("CLUSTERENV — BASELINE vs. TRAINED COMPARISON")
+    print("RL ENVIRONMENT FOR DATACENTER COOLING AND OPERATIONS — BASELINE vs. TRAINED")
     print(DIV)
 
     metrics = [
@@ -242,7 +242,7 @@ def generate_episode(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ClusterEnv demo recorder/replayer")
+    parser = argparse.ArgumentParser(description="RL Environment for Datacenter Cooling and Operations — demo recorder/replayer")
     parser.add_argument("recording", nargs="?", help="Path to a JSON recording to replay")
     parser.add_argument("--generate",  action="store_true", help="Generate a new recording")
     parser.add_argument("--scheduler", default="priority_weighted_threshold",

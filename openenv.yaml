@@ -1,4 +1,4 @@
-# OpenEnv manifest — DC cooling environment (V2)
+# OpenEnv manifest — DC Cooling + ClusterEnv scheduling environment
 name: dc-openenv
 version: "3.0.0"
 description: >

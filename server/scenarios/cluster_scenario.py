@@ -10,36 +10,35 @@ Zone layout:
   zone_team_b_1  — Team B inference zone (180 kW baseline always on + admitted extras)
   zone_shared    — Shared infrastructure (100 kW baseline always on)
 
-Thermal incident mechanism:
-  Individual zone cooling capacities (480–500 kW) are sufficient for individual jobs.
-  Thermal incidents occur through two coupled mechanisms:
+Physical environment — chiller fault and thermal state:
+  The chiller fault at window 5 (enabled by default) is real and runs inside every episode.
+  inject_chiller_fault() in simulation.py ramps COP from 3.5 → 0.8 over 5 physical steps,
+  then sets chiller_active=False. propagate_chiller_setpoint() then raises supply air temp
+  to wet_bulb + 2°C (~17–19°C depending on window). This reduces the delta-T driving
+  force in ZoneState.step_thermal() and thus effective cooling capacity.
 
-  1. Chiller fault at window 5 (enabled by default):
-     Chiller degrades over 5 physical steps then goes offline. Supply air temperature
-     rises to wet-bulb + 2°C (~17–19°C depending on window). With reduced delta-T
-     between hot-aisle and supply, effective cooling drops sharply. Zones running
-     large jobs (300–320 kW) cannot shed heat fast enough → temp exceeds 27°C.
+  Starting temperatures (23.5–24.5°C) and peak outdoor temps (32°C in windows 3–4)
+  are real constants in this file. They affect the PPO cooling controller training
+  (gym_cooling_env.py uses these via build_cluster_facility) and the per-step physics
+  inside ClusterEnvironment.step().
 
-  2. Elevated starting temperatures (23.5–24.5°C) + high outdoor temp (32°C):
-     Pre-fault windows 2–4 have worst outdoor temps. Zones admitting large jobs
-     start warm and approach 27°C during the 18 physical steps before fans fully ramp.
+  Zone temperature exceedances and the ClusterEnv grader metric:
+  The grader incident metric is POWER BUDGET VIOLATION (total_it_load_kw > 900 kW),
+  NOT zone temperature. See power_budget_violated() for the full rationale.
+  With CoolingHeuristic or PPOCoolingController running at every physical step,
+  the delta-T physics self-corrects and zone temperatures do not exceed 27°C at
+  realistic job sizes — the controllers compensate by ramping fans.
+  Temperature exceedances ARE the training signal for the PPO (reward W_TEMP=0.55
+  in CoolingGymEnv), but they are not the incident metric in the ClusterEnv grader.
 
-  Rule-based baseline failure path:
-     Accepts Team B's CRITICAL jobs (true priority MEDIUM) before window 5 chiller fault.
-     Active 300+ kW jobs in zone_team_b_1 when chiller fails → incidents in windows 5–7.
-     Trained scheduler should learn to reduce admitted load before window 5 fault.
+Calibration gate (run before submitting to training):
+  Incident metric is POWER BUDGET VIOLATION (total_it_load_kw > 900 kW), not temperature.
 
-Calibration gate (run before any LLM training):
-  Run priority_weighted_threshold scheduler for 20 episodes.
-  Assert 0.40 ≤ incident_rate ≤ 0.65 across windows 4–7.
-  If below 0.40: increase Team B's extra job sizes or raise starting temperatures.
-  If above 0.65: reduce starting temperatures or widen zone cooling capacities.
-
-Calibration gate (run before any LLM training):
-  Run priority_weighted_threshold scheduler for 20 episodes.
-  Assert 0.40 ≤ incident_rate ≤ 0.65 across windows 2–4.
-  If below 0.40: increase TEAM_B_INFERENCE_BASELINE_KW or peak job sizes.
-  If above 0.65: reduce peak job sizes or widen TOTAL_POWER_BUDGET_KW.
+  Run accept_all scheduler for 10 episodes → expect ~100% power violation rate in peak windows.
+  Run priority_weighted_threshold for 10 episodes → expect 0% violations, episode reward ≈ +0.28.
+    (0.50 × 0.54 + 0.35 × 0 + 0.15 × 0.06 = +0.279)
+  If accept_all shows <80% violations: increase TEAM_B_INFERENCE_BASELINE_KW or peak job kW.
+  If priority_weighted_threshold shows any violations: widen TOTAL_POWER_BUDGET_KW or reduce loads.
 """
 
 from __future__ import annotations
@@ -324,7 +323,7 @@ def power_budget_violated(facility: FacilityState) -> bool:
     """
     True if total admitted IT load exceeds the facility power budget.
 
-    ── WHY THIS IS THE PRIMARY INCIDENT METRIC FOR CLUSTERENV ──────────────────
+    ── WHY THIS IS THE PRIMARY INCIDENT METRIC FOR THIS ENVIRONMENT ────────────
     The thermal physics (COOLING_DELTA_T_REF = 9.0, delta_temp clamped to ±2°C)
     is calibrated for the Round 1 use case where the LLM controls fan speeds.
     In that context the agent can cause overheating by setting fans too low.

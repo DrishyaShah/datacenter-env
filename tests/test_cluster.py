@@ -185,7 +185,8 @@ if __name__ == "__main__":
     ]
 
     print("=" * 64)
-    print("ClusterEnv Integration Gate")
+    print("RL Environment for Datacenter Cooling and Operations")
+    print("Integration Gate")
     print("=" * 64)
 
     passed = 0

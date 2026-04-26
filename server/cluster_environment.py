@@ -10,8 +10,8 @@ Interface:
     window_state = env.reset(seed=42)
     window_state, reward, done, info = env.step(decisions)
 
-cooling_controller defaults to CoolingHeuristic (rule-based). Pass a trained PPO
-agent for two-phase training (Person B's PPO controller).
+cooling_controller defaults to CoolingHeuristic (rule-based). Pass a pre-trained PPO
+cooling controller (PPOCoolingController) for higher-fidelity physical simulation.
 """
 
 from __future__ import annotations

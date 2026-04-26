@@ -1,0 +1,60 @@
+# ClusterEnv GRPO Training — HF Space L40S — 50 Iterations
+# Model: unsloth/Qwen2.5-3B-Instruct-bnb-4bit | LoRA r=16 | G_EPISODES=2 | lr=1e-5
+# Hardware: HF Space L40S GPU | Space: Mephisto2412/clusterenv-training-gradio
+
+[  1/50]  loss=-17.8828  reward=+0.0594  group_std=0.297  grad=62.278  parse_fail=3/16
+[  2/50]  loss=+6.4062   reward=+0.1156  group_std=0.059  grad=27.779  parse_fail=0/16
+[  3/50]  loss=+3.7188   reward=+0.0906  group_std=0.234  grad=55.925  parse_fail=2/16
+[  4/50]  loss=+0.1094   reward=+0.0667  group_std=0.165  grad=45.037  parse_fail=2/16
+[  5/50]  loss=-17.4688  reward=-0.0969  group_std=0.153  grad=55.922  parse_fail=4/16
+[  6/50]  loss=-12.4766  reward=+0.0146  group_std=0.267  grad=64.085  parse_fail=3/16
+[  7/50]  loss=+7.0234   reward=+0.1094  group_std=0.159  grad=45.754  parse_fail=1/16
+[  8/50]  loss=+15.2109  reward=+0.0531  group_std=0.172  grad=62.440  parse_fail=3/16
+[  9/50]  loss=-1.1641   reward=+0.0969  group_std=0.228  grad=41.668  parse_fail=3/16
+[ 10/50]  loss=+1.2656   reward=-0.0031  group_std=0.191  grad=50.270  parse_fail=3/16
+[ 11/50]  loss=+8.5156   reward=-0.0141  group_std=0.255  grad=49.798  parse_fail=2/16
+[ 12/50]  loss=+2.4922   reward=+0.0906  group_std=0.278  grad=62.315  parse_fail=4/16
+[ 13/50]  loss=+3.2734   reward=+0.0406  group_std=0.116  grad=43.381  parse_fail=1/16
+[ 14/50]  loss=-2.3047   reward=+0.0938  group_std=0.100  grad=40.123  parse_fail=0/16
+[ 15/50]  loss=-43.0156  reward=+0.0703  group_std=0.236  grad=77.091  parse_fail=1/16
+[ 16/50]  loss=-17.6797  reward=+0.1354  group_std=0.208  grad=50.796  parse_fail=2/16
+[ 17/50]  loss=-25.4414  reward=+0.1156  group_std=0.216  grad=51.494  parse_fail=2/16
+[ 18/50]  loss=-9.2031   reward=+0.2156  group_std=0.147  grad=53.438  parse_fail=0/16
+[ 19/50]  loss=-19.8906  reward=-0.0969  group_std=0.272  grad=66.157  parse_fail=7/16
+[ 20/50]  loss=+7.6562   reward=+0.1562  group_std=0.094  grad=33.037  parse_fail=0/16
+[ 21/50]  loss=-17.9844  reward=+0.1469  group_std=0.266  grad=57.898  parse_fail=2/16
+[ 22/50]  loss=-3.6406   reward=+0.1375  group_std=0.081  grad=35.128  parse_fail=0/16
+[ 23/50]  loss=-18.3125  reward=+0.0875  group_std=0.062  grad=49.624  parse_fail=1/16
+[ 24/50]  loss=-9.0156   reward=+0.0375  group_std=0.188  grad=46.720  parse_fail=1/16
+[ 25/50]  loss=-0.4609   reward=+0.1187  group_std=0.062  grad=27.756  parse_fail=0/16
+[ 26/50]  loss=+3.8438   reward=+0.2047  group_std=0.208  grad=47.486  parse_fail=0/16
+[ 27/50]  loss=-1.6016   reward=+0.1250  group_std=0.056  grad=34.826  parse_fail=0/16
+[ 28/50]  loss=+2.4062   reward=+0.1219  group_std=0.128  grad=32.638  parse_fail=0/16
+[ 29/50]  loss=-0.9219   reward=+0.1000  group_std=0.181  grad=47.074  parse_fail=0/16
+[ 30/50]  loss=-2.0000   reward=+0.1812  group_std=0.106  grad=29.239  parse_fail=0/16
+[ 31/50]  loss=+3.4766   reward=+0.1656  group_std=0.122  grad=36.208  parse_fail=0/16
+[ 32/50]  loss=-6.2656   reward=+0.0844  group_std=0.041  grad=38.668  parse_fail=0/16
+[ 33/50]  loss=-0.2188   reward=+0.0875  group_std=0.212  grad=41.243  parse_fail=0/16
+[ 34/50]  loss=-2.6406   reward=+0.2406  group_std=0.053  grad=42.558  parse_fail=0/16
+[ 35/50]  loss=-1.1719   reward=+0.1219  group_std=0.128  grad=38.847  parse_fail=0/16
+[ 36/50]  loss=-4.7812   reward=+0.1187  group_std=0.125  grad=43.015  parse_fail=0/16
+[ 37/50]  loss=-1.9297   reward=+0.1344  group_std=0.084  grad=40.612  parse_fail=0/16
+[ 38/50]  loss=+10.0391  reward=+0.1406  group_std=0.209  grad=54.256  parse_fail=0/16
+[ 39/50]  loss=-1.7891   reward=+0.1844  group_std=0.122  grad=34.507  parse_fail=0/16
+[ 40/50]  loss=+4.4766   reward=+0.1000  group_std=0.106  grad=32.397  parse_fail=0/16
+[ 41/50]  loss=-1.9531   reward=+0.0906  group_std=0.097  grad=31.165  parse_fail=0/16
+[ 42/50]  loss=-1.6172   reward=+0.0938  group_std=0.162  grad=40.352  parse_fail=0/16
+[ 43/50]  loss=+0.3516   reward=+0.1625  group_std=0.106  grad=38.661  parse_fail=0/16
+[ 44/50]  loss=-0.0703   reward=+0.0719  group_std=0.116  grad=41.444  parse_fail=0/16
+[ 45/50]  loss=-1.6797   reward=+0.1562  group_std=0.094  grad=38.248  parse_fail=0/16
+[ 46/50]  loss=+0.0938   reward=+0.0594  group_std=0.203  grad=43.115  parse_fail=0/16
+[ 47/50]  loss=+1.1094   reward=+0.0781  group_std=0.141  grad=49.910  parse_fail=0/16
+[ 48/50]  loss=-0.7344   reward=+0.0875  group_std=0.100  grad=43.274  parse_fail=0/16
+[ 49/50]  loss=+1.2344   reward=+0.0375  group_std=0.044  grad=22.348  parse_fail=0/16
+[ 50/50]  loss=-0.1250   reward=+0.1437  group_std=0.062  grad=30.880  parse_fail=0/16
+
+# Summary:
+# Peak reward:    +0.2406 at iteration 34
+# 0 parse fails: from iteration 25 onward (26 consecutive clean iterations)
+# Final reward:  +0.1437
+# Baseline target: +0.28 (priority_weighted_threshold rule-based scheduler)

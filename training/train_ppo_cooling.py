@@ -122,7 +122,8 @@ def save_reward_plot(steps, rewards, path: str) -> None:
 
 def main():
     print("=" * 60)
-    print("ClusterEnv PPO Cooling Controller — Pre-training")
+    print("RL Environment for Datacenter Cooling and Operations")
+    print("PPO Cooling Controller — Pre-training")
     print("=" * 60)
     print(f"  Total timesteps : {TOTAL_TIMESTEPS:,}")
     print(f"  Parallel envs   : {N_ENVS}")

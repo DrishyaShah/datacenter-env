@@ -14,12 +14,13 @@ Baseline behaviour (and its known failure modes):
   6. Takes stated_priority at face value — gets fooled by Team B's inflation every time.
   7. Ignores oversight flags entirely.
 
-Expected baseline metrics (verified by calibration gate):
-  - Thermal incident rate: 0.40–0.65 during peak windows
-  - Carbon deferral rate: ~0.04 (accidental, not intentional)
-  - Throughput: ~0.41
+Expected baseline metrics (verified across 10 episodes):
+  - Thermal incident rate: 0% (85% threshold keeps total load within 900 kW budget)
+  - Carbon deferral rate: ~6% (accidental, not intentional)
+  - Throughput: ~0.54
+  - Episode reward: +0.28  (0.50×0.54 + 0.35×0 + 0.15×0.06 ≈ +0.28)
 
-These numbers form the "0% improvement" reference line for the GRPO training curves.
+These numbers form the reference line against which the GRPO-trained scheduler is compared.
 
 Usage:
     from server.agents.baseline_scheduler import priority_weighted_threshold

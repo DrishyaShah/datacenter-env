@@ -1,5 +1,5 @@
 """
-HF Spaces training launcher for ClusterEnv GRPO.
+HF Spaces training launcher for RL Environment for Datacenter Cooling and Operations — GRPO.
 
 Runs training in a background thread while exposing a minimal HTTP health
 endpoint on port 7860 so HF doesn't mark the Space as unhealthy and kill it.
@@ -26,7 +26,7 @@ _status = {"state": "starting", "iteration": 0, "last_reward": 0.0}
 class _Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         body = (
-            f"ClusterEnv GRPO Training\n"
+            f"RL Environment for Datacenter Cooling and Operations — GRPO Training\n"
             f"State    : {_status['state']}\n"
             f"Iteration: {_status['iteration']}\n"
             f"Reward   : {_status['last_reward']:+.4f}\n"

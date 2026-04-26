@@ -15,8 +15,11 @@ pinned: false
 | | |
 |---|---|
 | **Environment Space** | [Mephisto2412/datacenter-env](https://huggingface.co/spaces/Mephisto2412/datacenter-env) |
-| **Trained Adapter** | [Mephisto2412/clusterenv-grpo-adapter](https://huggingface.co/Mephisto2412/clusterenv-grpo-adapter) |
+| **GRPO Training Space (logs)** | [Mephisto2412/clusterenv-training-gradio](https://huggingface.co/spaces/Mephisto2412/clusterenv-training-gradio) |
+| **Trained GRPO Adapter** | [Mephisto2412/clusterenv-grpo-adapter](https://huggingface.co/Mephisto2412/clusterenv-grpo-adapter) |
+| **PPO Cooling Controller** | [Mephisto2412/clusterenv-ppo-cooling](https://huggingface.co/Mephisto2412/clusterenv-ppo-cooling) |
 | **Training Notebook (Colab)** | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DrishyaShah/datacenter-env/blob/arhaan/finale-v1/training/train_grpo_colab.ipynb) |
+| **Training Logs (50-iter HF Space)** | [training/training_logs_hfspace_50iter.txt](training/training_logs_hfspace_50iter.txt) |
 | **Mini-Blog** | [BLOG.md](BLOG.md) |
 | **GitHub Repo** | [DrishyaShah/datacenter-env](https://github.com/DrishyaShah/datacenter-env/tree/arhaan/finale-v1) |
 
