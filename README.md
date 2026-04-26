@@ -24,17 +24,38 @@ pinned: false
 
 ## Training Results
 
-![Training Curves](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves.png)
+We ran training twice on different hardware. Both runs use the same model, hyperparameters, and environment.
 
-*50 GRPO iterations on HF Space L40S. Left: reward curve with 5-step rolling average. Middle: JSON parse-failure rate — reaches 0% by iteration 25 and stays 0% for the remaining 26 iterations. Right: gradient norm stabilisation after iteration 20.*
+### Run 1 — Colab T4 (30 iterations, notebook with outputs)
+
+![Training Curves — Colab 30 iter](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves_colab_30iter.png)
+
+*Reproduced via [`training/train_grpo_colab.ipynb`](training/train_grpo_colab.ipynb) — open in Colab to re-run. Reward, loss, parse-failure rate, and gradient norm across 30 iterations on a free T4 GPU.*
 
 | Metric | Value |
 |---|---|
-| Parse failures | 0% from iteration 25, sustained for final 26 iterations |
+| Parse failures | 5/16 → 0% by iteration 5, minor noise through iter 22, then clean |
+| Peak reward | +0.1937 at iteration 17 |
+| Final reward | +0.0250 at iteration 30 |
+
+---
+
+### Run 2 — HF Space L40S (50 iterations, extended run)
+
+![Training Curves — HF Space 50 iter](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves_hfspace_50iter.png)
+
+*Trained on HF Space (`Mephisto2412/clusterenv-training-gradio`) using an L40S GPU. Reward, loss, parse-failure rate, and gradient norm across 50 iterations.*
+
+| Metric | Value |
+|---|---|
+| Parse failures | 0% from iteration 25, sustained for final 26 consecutive iterations |
 | Peak reward | +0.2406 at iteration 34 |
-| Stable reward range | +0.08 – +0.24 from iteration 25 onward |
+| Final reward | +0.1437 at iteration 50 |
 | Rule-based baseline | +0.28 (target) |
-| Model | Qwen2.5-3B-Instruct, 4-bit, LoRA r=16 (~29.9M trainable params) |
+
+---
+
+**Model:** Qwen2.5-3B-Instruct, 4-bit quantised via Unsloth · LoRA r=16 · ~29.9M trainable parameters
 
 ---
 

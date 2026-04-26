@@ -103,9 +103,15 @@ We use Group Relative Policy Optimization (GRPO). For each window, it samples a 
 
 **Model:** Qwen2.5-3B-Instruct, 4-bit quantized via Unsloth. LoRA r=16 across all projection layers — approximately 29.9M trainable parameters out of 3B total.
 
-**Results — 50 iterations on HF Space L40S:**
+We ran training twice. The Colab notebook (30 iterations on T4) is the re-runnable artifact for judges. The HF Space run (50 iterations on L40S) is the extended training result.
 
-![Training Curves](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves.png)
+**Run 1 — Colab T4 (30 iterations):**
+
+![Training Curves — Colab 30 iter](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves_colab_30iter.png)
+
+**Run 2 — HF Space L40S (50 iterations):**
+
+![Training Curves — HF Space 50 iter](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves_hfspace_50iter.png)
 
 Three observations from the run:
 
