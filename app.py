@@ -17,7 +17,7 @@ if ROOT not in sys.path:
 
 import gradio as gr
 
-N_ITERATIONS = 60  # must match training/train_grpo.py
+N_ITERATIONS = 50  # must match training/train_grpo.py
 
 _status  = {"state": "starting", "iteration": 0, "reward": 0.0, "log": []}
 _started = threading.Event()

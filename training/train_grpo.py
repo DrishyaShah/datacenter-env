@@ -27,6 +27,7 @@ warnings.filterwarnings("ignore", message=".*use_return_dict.*")
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning, message=".*Unsloth.*")
 
+import json
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -55,7 +56,7 @@ LORA_TARGET_MODS  = [
     "gate_proj", "up_proj", "down_proj",
 ]
 
-N_ITERATIONS      = 60        # L40S: 60 iters at ~3.5 hrs (with speedup config)
+N_ITERATIONS      = 50        # 50 iters at ~3.5 hrs on L40S
 G_EPISODES        = 2         # 16 samples/iter — half the calls, valid GRPO signal
 LEARNING_RATE     = 1e-5
 GRAD_CLIP         = 1.0
@@ -272,8 +273,16 @@ def main() -> None:
         print("  No checkpoint found — starting from scratch.")
     print()
 
+    # Load accumulated metrics from the most recent checkpoint (if any)
     reward_log: list[float] = []
     loss_log:   list[float] = []
+    metrics_path = os.path.join(ADAPTER_DIR, "metrics.json")
+    if os.path.exists(metrics_path):
+        with open(metrics_path) as f:
+            saved = json.load(f)
+        reward_log = saved.get("reward_log", [])
+        loss_log   = saved.get("loss_log", [])
+        print(f"  Loaded {len(reward_log)} prior metric entries from metrics.json")
 
     # ── Main loop ─────────────────────────────────────────────────────────────
     for iteration in range(start_iteration, N_ITERATIONS):
@@ -339,6 +348,8 @@ def main() -> None:
             ckpt_path = os.path.join(ADAPTER_DIR, f"ckpt_{iteration + 1}")
             model.save_pretrained(ckpt_path)
             tokenizer.save_pretrained(ckpt_path)
+            with open(metrics_path, "w") as f:
+                json.dump({"reward_log": reward_log, "loss_log": loss_log}, f)
             print(f"  Checkpoint saved -> {ckpt_path}")
             _try_push_to_hub(model, tokenizer, f"ckpt_{iteration + 1}")
 
@@ -346,6 +357,8 @@ def main() -> None:
     final_path = os.path.join(ADAPTER_DIR, "final")
     model.save_pretrained(final_path)
     tokenizer.save_pretrained(final_path)
+    with open(metrics_path, "w") as f:
+        json.dump({"reward_log": reward_log, "loss_log": loss_log}, f)
     _try_push_to_hub(model, tokenizer, "final")
     # ── Save training curves as PNG (required by submission checklist) ────────
     _save_training_plots(reward_log, loss_log)
