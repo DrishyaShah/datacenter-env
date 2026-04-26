@@ -16,9 +16,9 @@ This is the environment we built. It covers the physical layer (thermal physics,
 
 ---
 
-## Phase 1: Datacenter Cooling
+## Phase 1: Datacenter Cooling (Round 1 Submission)
 
-We started with a physics-based cooling simulation. The model covers thermal mass, chiller COP, fan airflow, sensor drift, and diurnal temperature and carbon curves. Three tasks of increasing difficulty:
+Our Round 1 submission was a physics-based cooling simulation. The model covers thermal mass, chiller COP, fan airflow, sensor drift, and diurnal temperature and carbon curves. Three tasks of increasing difficulty:
 
 - **Easy** — single zone, started above safe temperature, agent must recover to [18–27°C] and maintain PUE efficiency
 - **Medium** — three zones, one with a faulty sensor drifting up to +12°C above true temperature, load surge across steps 6–17
@@ -42,9 +42,9 @@ Separating these two isn't a workaround — it's the correct decomposition. Each
 
 ---
 
-## Phase 2: ClusterEnv
+## Phase 2: ClusterEnv (Finale Submission)
 
-With PPO handling the physical layer, we built a richer scheduling environment on top.
+With the physics engine proven and the PPO cooling controller pre-trained, the Finale round extends the environment into a full datacenter operations simulator. We built a richer scheduling environment on top of the same physics engine.
 
 **Episode structure:** 8 negotiation windows per episode. Each window is backed by 18 physical simulation steps — admission decisions directly affect IT load, which affects zone temperatures during those steps. A power budget violation during physical simulation triggers a reward penalty on the scheduler.
 

@@ -1,6 +1,5 @@
 ---
-title: DC OpenEnv
-# emoji: 🏭
+title: RL Environment for Datacenter Cooling and Operations
 colorFrom: blue
 colorTo: green
 sdk: docker
@@ -10,44 +9,50 @@ pinned: false
 
 # RL Environment for Datacenter Cooling and Operations
 
-**Theme:** Multi-Agent Interactions (Theme #1) — OpenEnv Hackathon Finale 2026
+**Theme:** World Modeling — Professional Tasks (Theme #3.1) — OpenEnv Hackathon Finale 2026
 
 | | |
 |---|---|
 | **Environment Space** | [Mephisto2412/datacenter-env](https://huggingface.co/spaces/Mephisto2412/datacenter-env) |
-| **GRPO Training Space (logs)** | [Mephisto2412/clusterenv-training-gradio](https://huggingface.co/spaces/Mephisto2412/clusterenv-training-gradio) |
-| **Trained GRPO Adapter** | [Mephisto2412/clusterenv-grpo-adapter](https://huggingface.co/Mephisto2412/clusterenv-grpo-adapter) |
 | **PPO Cooling Controller** | [Mephisto2412/clusterenv-ppo-cooling](https://huggingface.co/Mephisto2412/clusterenv-ppo-cooling) |
 | **Training Notebook (Colab)** | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DrishyaShah/datacenter-env/blob/arhaan/finale-v1/training/train_grpo_colab.ipynb) |
-| **Training Logs (50-iter HF Space)** | [training/training_logs_hfspace_50iter.txt](training/training_logs_hfspace_50iter.txt) |
+| **Training Logs (HF Space 50-iter run)** | [training_logs_hfspace_50iter.txt](training/training_logs_hfspace_50iter.txt) |
 | **Mini-Blog** | [BLOG.md](BLOG.md) |
 | **GitHub Repo** | [DrishyaShah/datacenter-env](https://github.com/DrishyaShah/datacenter-env/tree/arhaan/finale-v1) |
 
 ---
 
+## The Story: From Cooling to Operations
+
+**Round 1** built a realistic physics-based datacenter cooling environment — thermal mass, chiller dynamics, sensor drift, diurnal weather curves — evaluated against LLM agents zero-shot across three tasks of increasing difficulty (single-zone recovery, multi-zone sensor fault, cascading chiller failure).
+
+**Finale** evolves the same physics engine into a full **datacenter operations simulator**. The cooling problem is solved by a pre-trained PPO controller running in the background. The new challenge sits one layer up: an LLM scheduler must allocate compute jobs across competing teams, manage a 900 kW power budget, detect systematic misrepresentation of job metadata, and defer carbon-flexible workloads to clean-energy windows — all from the same partially observable state the cooling engine produces.
+
+The two layers are not independent. Admitting a job increases IT load. IT load generates heat. Heat determines whether the physics engine violates the power budget. A bad scheduling decision creates a thermal incident that costs reward.
+
+---
+
 ## Training Results
 
-We ran training twice on different hardware. Both runs use the same model, hyperparameters, and environment.
+We ran GRPO training twice using the same model, hyperparameters, and environment.
 
-### Run 1 — Colab T4 (30 iterations, notebook with outputs)
+### Run 1 — Colab T4 (30 iterations, re-runnable notebook)
 
 ![Training Curves — Colab 30 iter](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves_colab_30iter.png)
 
-*Reproduced via [`training/train_grpo_colab.ipynb`](training/train_grpo_colab.ipynb) — open in Colab to re-run. Reward, loss, parse-failure rate, and gradient norm across 30 iterations on a free T4 GPU.*
+*Reward, GRPO loss, JSON parse-failure rate, and gradient norm. Run via [`training/train_grpo_colab.ipynb`](training/train_grpo_colab.ipynb) on a free T4 — open in Colab to re-run.*
 
 | Metric | Value |
 |---|---|
-| Parse failures | 5/16 → 0% by iteration 5, minor noise through iter 22, then clean |
+| Parse failures | 5/16 → 0% by iteration 5 |
 | Peak reward | +0.1937 at iteration 17 |
 | Final reward | +0.0250 at iteration 30 |
-
----
 
 ### Run 2 — HF Space L40S (50 iterations, extended run)
 
 ![Training Curves — HF Space 50 iter](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves_hfspace_50iter.png)
 
-*Trained on HF Space (`Mephisto2412/clusterenv-training-gradio`) using an L40S GPU. Reward, loss, parse-failure rate, and gradient norm across 50 iterations.*
+*Reward, GRPO loss, JSON parse-failure rate, and gradient norm across 50 iterations. Full per-iteration log: [training_logs_hfspace_50iter.txt](training/training_logs_hfspace_50iter.txt)*
 
 | Metric | Value |
 |---|---|
@@ -56,88 +61,120 @@ We ran training twice on different hardware. Both runs use the same model, hyper
 | Final reward | +0.1437 at iteration 50 |
 | Rule-based baseline | +0.28 (target) |
 
----
-
-**Model:** Qwen2.5-3B-Instruct, 4-bit quantised via Unsloth · LoRA r=16 · ~29.9M trainable parameters
+**Model:** Qwen2.5-3B-Instruct, 4-bit quantised via Unsloth · LoRA r=16, alpha=32 · ~29.9M trainable parameters · AdamW lr=1e-5
 
 ---
 
-## Problem
+## Environment Architecture
 
-A shared AI compute cluster has 900 kW of total power budget. Two research teams submit jobs each scheduling window — both want more than the budget allows. One team submits honest requests. The other always inflates stated priority, always claims urgent deadlines regardless of true slack, and hides carbon flexibility 60% of the time to avoid being deferred.
-
-A scheduler that takes stated claims at face value over-allocates to the gaming team, crowds out legitimate work, and misses carbon deferral opportunities. The goal is to train an LLM scheduler that learns — from environment reward alone — to detect and discount this systematic misrepresentation.
-
-This is a **multi-agent environment with information asymmetry**: the scheduler cannot see true job metadata, only what each team declares. The OversightMonitor provides cross-window gaming pattern signals as a first-class observation field.
-
----
-
-## Episode Structure
-
-**8 negotiation windows × 18 physical simulation steps = 144 total steps per episode**  
-**Each window covers 1.5 simulated hours → full episode = 12 simulated hours**
+The environment has two coupled layers:
 
 ```
-Window 0 → [LLM issues admission decisions]
-         → [18 physical steps: PPO cooling controller runs, thermal load computed]
-         → [reward computed, oversight flags updated]
-         → Window 1 → ... → Window 7 → done
+┌──────────────────────────────────────────────────────────────┐
+│  SCHEDULING LAYER (LLM Scheduler — trained via GRPO)         │
+│                                                              │
+│  Each window: reads WindowState observation →                │
+│  issues ACCEPT / REJECT / DEFER per job request →           │
+│  reward computed from throughput + thermal + carbon          │
+└──────────────────────┬───────────────────────────────────────┘
+                       │ admitted jobs → IT load
+┌──────────────────────▼───────────────────────────────────────┐
+│  PHYSICS LAYER (PPO Cooling Controller — pre-trained SB3)    │
+│                                                              │
+│  18 steps/window: reads zone temps, IT load, weather →       │
+│  controls fan speeds + chiller setpoints →                   │
+│  FacilityState evolves via thermal physics                   │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-The LLM scheduler acts once per window. The PPO cooling controller runs every physical step silently in the background. Admission decisions determine IT load; IT load determines heat; heat determines whether the 900 kW power budget is violated.
+**Episode:** 8 negotiation windows × 18 physical steps = 144 total steps  
+**Simulated time:** 8 windows × 1.5 hours = 12 simulated hours per episode
 
-**Carbon intensity by window** (from `cluster_scenario.py`):
+---
 
+## Physics Engine (`server/simulation.py`)
+
+The same physics engine from Round 1, now running under the scheduling layer.
+
+### Thermal model
+Each zone has a configurable thermal mass (default 850 kJ/K, scaled by IT load). Temperature update per physical step:
+
+```
+heat_in  = it_load_kw × 300 s
+heat_out = mass_flow × Cp_air × (zone_temp − supply_air_temp)
+ΔT       = (heat_in − heat_out) / (thermal_mass × 1000)
+```
+
+Mass flow scales with fan speed and zone cooling capacity. Cold-aisle temperature is clamped to prevent sub-ambient values.
+
+### Chiller and free cooling
+- **Chiller COP** degrades as outside temperature rises (approx. linear, 3.5 at 20°C baseline)
+- **Free cooling** activates when wet-bulb temperature is meaningfully below supply setpoint — blends economiser air proportionally
+- **Chiller fault** (enabled by default at window 5): COP degrades over 5 steps, then chiller goes fully offline. Observable via `chiller_fault_status`: `"nominal"` → `"degrading"` → `"offline"`
+
+### Environmental inputs (per window)
 | Window | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |--------|---|---|---|---|---|---|---|---|
 | Carbon | low | low | high | high | high | medium | low | low |
+| Outside temp | cool | cool | rising | peak | peak | falling | cool | cool |
 
-An optional chiller fault fires at window 5 by default (`enable_chiller_fault=True`), raising supply temperatures during the medium-carbon window.
-
----
-
-## The Two Teams
-
-### Team A — CooperativeTeam (`server/agents/scripted_teams.py`)
-
-Submits honest requests. All 8 archetypes have `stated_priority == true_priority`, accurate deadlines, and honest carbon flexibility. Archetypes include: ResNet-50 pretraining (LOW), ETL pipeline (LOW), hyperparameter sweep (MEDIUM), dataset preprocessing (LOW), MMLU benchmark evaluation (MEDIUM), LoRA fine-tuning (MEDIUM), latency benchmark (HIGH), embedding generation (LOW).
-
-In high-carbon windows, Team A voluntarily withholds carbon-flexible jobs to allow deferral without deadline penalties.
-
-### Team B — StrategicTeam (`server/agents/scripted_teams.py`)
-
-Systematically misrepresents every request:
-
-- **Priority inflation**: all 8 archetypes state HIGH or CRITICAL regardless of true priority (gaps of 1–2 levels)
-- **Deadline compression**: `stated_deadline` is always `"urgent"` regardless of true deadline window
-- **Carbon gaming**: hides true carbon flexibility 60% of the time (`stated_carbon_flexible=False` when `true_carbon_flexible=True`)
-- **Ignores carbon signal**: submits regardless of grid intensity
-
-A scheduler trusting stated claims will consistently over-serve Team B.
+### Power budget
+**900 kW total** across all zones. Any physical step where total admitted IT load exceeds 900 kW triggers a thermal incident → R_thermal = −1.0 for that window. The scheduler is the only agent that can prevent this by rejecting or deferring jobs.
 
 ---
 
-## Oversight Monitor (`server/agents/oversight_monitor.py`)
+## ClusterEnv Scheduling Layer
 
-After each window, four rule-based detectors run against submitted requests and produce flags injected into the next window's observation:
+### Observation space (per window)
+The LLM scheduler receives a `WindowState` JSON each window containing:
+
+| Field | Description |
+|---|---|
+| `window_idx` | Current window index [0–7] |
+| `carbon_intensity` | Grid carbon label for this window + 3-window forecast |
+| `power_budget_remaining_kw` | Remaining headroom before 900 kW limit |
+| `thermal_summary` | Zone temperatures, chiller status, supply air summary |
+| `job_requests` | List of pending requests from both teams (stated metadata only) |
+| `deferred_jobs` | Jobs carried over from prior windows with updated deadlines |
+| `team_history` | Per-team: acceptance rate, priority inflation rate, deadline compression rate, carbon gaming rate, oversight flags received — updated each window |
+| `oversight_flags` | Gaming pattern flags generated after the previous window |
+| `chargeback_ledger` | Remaining compute budget per team |
+
+### Action space
+For each job request in the window, the scheduler issues one of three decisions:
+
+| Decision | Meaning |
+|---|---|
+| `ACCEPT` | Admit the job immediately; IT load increases this window |
+| `REJECT` | Deny the job; team loses the compute budget allocation |
+| `DEFER` | Reschedule to a future window (must specify `scheduled_window` ∈ [current+1, 7]) |
+
+### The two teams
+
+**Team A — CooperativeTeam** (`server/agents/scripted_teams.py`): 8 archetypes with honest metadata. `stated_priority == true_priority`. Accurate deadlines. Honest carbon flexibility. Voluntarily withholds carbon-flexible jobs in high-carbon windows. Archetypes: ResNet-50 pretraining (LOW), ETL pipeline (LOW), hyperparameter sweep (MEDIUM), dataset preprocessing (LOW), MMLU evaluation (MEDIUM), LoRA fine-tuning (MEDIUM), latency benchmark (HIGH), embedding generation (LOW).
+
+**Team B — StrategicTeam** (`server/agents/scripted_teams.py`): 8 archetypes that always misrepresent:
+- `stated_priority` is always HIGH or CRITICAL (true priority is MEDIUM or LOW — gap of 1–2 levels)
+- `stated_deadline` is always `"urgent"` regardless of true deadline window
+- `stated_carbon_flexible=False` 60% of the time when true value is `True`
+- Submits regardless of carbon intensity
+
+### Oversight Monitor (`server/agents/oversight_monitor.py`)
+Four rule-based detectors run after each window and inject flags into the next observation:
 
 | Detector | Trigger | Confidence |
 |---|---|---|
-| Priority inflation | `stated_priority > true_priority` by 1 level | 0.62 (warning) |
-| Priority inflation | gap of 2 levels | 0.88 (flag) |
-| Priority inflation | gap of 3 levels | 0.97 (escalate) |
-| Deadline compression | stated "urgent" with ≥2 windows true slack | warning |
-| Deadline compression | stated "urgent" with ≥3 windows true slack | flag |
-| Carbon gaming | `stated_carbon_flexible=False` when true=`True` | flag |
-| Pattern escalation | any of the above for 3+ consecutive windows | team-level flag, severity escalated by historical rate |
-
-The scheduler observes these flags as a standard field alongside the job queue. Learning to act on them is part of the training objective.
+| Priority inflation | gap = 1 level | 0.62 (warning) |
+| Priority inflation | gap = 2 levels | 0.88 (flag) |
+| Priority inflation | gap = 3 levels | 0.97 (escalate) |
+| Deadline compression | stated "urgent", ≥2 windows true slack | warning |
+| Deadline compression | stated "urgent", ≥3 windows true slack | flag |
+| Carbon gaming | `stated_carbon_flexible=False`, true=`True` | flag |
+| Pattern escalation | any above for 3+ consecutive windows | team-level flag, escalated severity |
 
 ---
 
 ## Reward Function (`server/graders/grader_cluster.py`)
-
-Per-window reward with three components:
 
 ```
 R_window = 0.50 × R_throughput  +  0.35 × R_thermal  +  0.15 × R_carbon
@@ -147,38 +184,30 @@ R_window = 0.50 × R_throughput  +  0.35 × R_thermal  +  0.15 × R_carbon
 |---|---|---|
 | R_throughput | jobs completed on time / max(jobs admitted, 1) | [0, 1] |
 | R_thermal | −1.0 if any physical step exceeded 900 kW, else 0.0 | {−1.0, 0.0} |
-| R_carbon | carbon-flexible jobs deferred to low-carbon windows / max(eligible admitted, 1) | [0, 1] |
+| R_carbon | carbon-flexible jobs deferred to low-carbon windows / max(eligible, 1) | [0, 1] |
 
-**Per-window range**: [−0.35, +0.65]  
-**Episode score**: mean R_window across all 8 windows
+**Per-window range:** [−0.35, +0.65] · **Episode score:** mean R_window across 8 windows
 
-**Baselines** (from `grader_cluster.py`):
-
-| Scheduler | Behaviour | Reward |
+| Scheduler | Behaviour | Episode Reward |
 |---|---|---|
-| `accept_all` | admits everything | 100% power violation rate |
-| `priority_weighted_threshold` | rule-based, 85% capacity limit | **+0.28** (verified across 10 episodes) |
-| Trained GRPO agent | learned policy | +0.08–+0.24 after 50 iterations |
+| `accept_all` | admits everything | ~100% power violation rate |
+| `priority_weighted_threshold` | rule-based, 85% capacity limit | **+0.28** (measured over 10 episodes) |
+| Trained GRPO agent (50 iter) | learned policy | +0.08–+0.24 |
 
 ---
 
-## GRPO Training (`training/train_grpo.py`, `training/train_grpo_colab.ipynb`)
+## GRPO Training Setup
 
-**Model:** `unsloth/Qwen2.5-3B-Instruct-bnb-4bit`  
-**LoRA:** r=16, alpha=32, all projection layers (q, k, v, o, gate, up, down) — 29,933,568 trainable parameters  
-**Optimizer:** AdamW, lr=1e-5  
-**Temperature:** 0.7, max_new_tokens=768  
-**Batch:** G_EPISODES=2 episodes × 8 windows = 16 samples per iteration  
+```
+Model:      unsloth/Qwen2.5-3B-Instruct-bnb-4bit
+LoRA:       r=16, alpha=32, all projection layers (q,k,v,o,gate,up,down)
+Params:     29,933,568 trainable / ~3B total
+Optimizer:  AdamW, lr=1e-5, grad_clip=1.0
+Batch:      G_EPISODES=2 × 8 windows = 16 samples/iter
+Temp:       0.7, max_new_tokens=768
+```
 
-Each iteration:
-1. **Rollout phase** (inference, no gradient): collect 2 episodes (16 window-level samples) with the current policy
-2. **Advantage computation**: GRPO — group relative advantages within each window's sample group
-3. **Gradient phase**: `loss = −advantage × log_prob`, normalised by batch size, gradient clipped at 1.0
-4. **Checkpoint**: local save every 10 iterations; Hub push to `Mephisto2412/clusterenv-grpo-adapter` if `HF_TOKEN` is set
-
-**Re-run training** (10 iterations, ~20 min on T4):
-
-Open the notebook in Colab, select GPU runtime, run all cells. `N_ITERATIONS=10` by default for quick verification; the full 30-iteration run used to produce the plots above took ~2.5 hours on a T4.
+Each iteration: rollout phase (inference, no grad) → GRPO advantage computation (group relative within each window) → gradient phase (`loss = −adv × log_prob / batch_size`) → checkpoint every 10 iterations.
 
 ---
 
@@ -186,21 +215,22 @@ Open the notebook in Colab, select GPU runtime, run all cells. `N_ITERATIONS=10`
 
 | File | Role |
 |---|---|
-| `server/cluster_environment.py` | Core 8-window MDP, OpenEnv gym-style API (`reset`, `step`) |
-| `server/agents/scripted_teams.py` | CooperativeTeam (Team A) and StrategicTeam (Team B) with 8 archetypes each |
+| `server/cluster_environment.py` | Core 8-window MDP — OpenEnv `reset()` / `step()` |
+| `server/simulation.py` | Thermal physics engine (thermal mass, chiller COP, fan airflow, sensor drift) |
+| `server/agents/scripted_teams.py` | CooperativeTeam (A) and StrategicTeam (B), 8 archetypes each |
 | `server/agents/oversight_monitor.py` | 4-detector rule-based gaming pattern monitor |
 | `server/agents/ppo_cooling_controller.py` | Wrapper for pre-trained SB3 PPO physical layer controller |
+| `server/agents/cooling_heuristic.py` | Fallback heuristic cooling when PPO unavailable |
 | `server/agents/baseline_scheduler.py` | `priority_weighted_threshold` rule-based baseline (+0.28) |
-| `server/agents/cooling_heuristic.py` | Fallback heuristic cooling controller (used when PPO unavailable) |
-| `server/graders/grader_cluster.py` | 3-component window-level reward (throughput + thermal + carbon) |
+| `server/graders/grader_cluster.py` | 3-component window-level reward |
 | `server/economic/job_request.py` | `JobRequest`, `AdmissionDecision`, priority levels (LOW/MEDIUM/HIGH/CRITICAL) |
 | `server/economic/chargeback.py` | Per-team compute budget ledger |
-| `server/scenarios/cluster_scenario.py` | Power budget (900 kW), carbon schedule, facility builder |
-| `server/simulation.py` | Thermal physics engine (thermal mass, chiller COP, fan airflow) |
-| `training/train_grpo.py` | Full GRPO training loop with checkpoint resume and metrics persistence |
-| `training/train_grpo_colab.ipynb` | Judge-runnable notebook with 30-iteration training output |
+| `server/scenarios/cluster_scenario.py` | Power budget (900 kW), carbon/weather schedules, facility builder |
+| `training/train_grpo.py` | GRPO training loop with checkpoint resume and metrics persistence |
+| `training/train_grpo_colab.ipynb` | Judge-runnable notebook — 30-iter run with full output cells |
 | `training/rollout.py` | Episode collection and GRPO advantage computation |
-| `openenv.yaml` | OpenEnv manifest (name: dc-openenv, version: 3.0.0, 4 tasks) |
+| `training/training_logs_hfspace_50iter.txt` | Full 50-iteration training log from HF Space L40S run |
+| `openenv.yaml` | OpenEnv manifest (name: dc-openenv, version: 3.0.0) |
 
 ---
 
@@ -213,7 +243,6 @@ from server.agents.baseline_scheduler import priority_weighted_threshold
 env = ClusterEnvironment(enable_chiller_fault=False)
 obs = env.reset(seed=42)
 
-# Run one full episode with the rule-based baseline
 total_reward = 0.0
 for _ in range(8):
     decisions = priority_weighted_threshold(obs)
@@ -222,8 +251,8 @@ for _ in range(8):
     if done:
         break
 
-print(f"Episode reward: {total_reward / 8:+.4f}")
-print(f"Team B gaming flags: {len(obs.oversight_flags)}")
+print(f"Episode reward: {total_reward / 8:+.4f}")  # expect ~+0.28
+print(f"Oversight flags: {len(obs.oversight_flags)}")
 ```
 
-The environment server runs at `http://0.0.0.0:8000` (Docker, port defined in `openenv.yaml`). The OpenEnv-compliant HTTP API exposes `/reset`, `/step`, and `/state` endpoints.
+The environment server exposes OpenEnv-compliant HTTP endpoints at port 8000 (`/reset`, `/step`, `/state`). See `openenv.yaml` for the full task manifest.
