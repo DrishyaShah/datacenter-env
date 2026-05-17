@@ -16,10 +16,10 @@ pinned: false
 | **HF Space (live environment)** | [Mephisto2412/datacenter-env](https://huggingface.co/spaces/Mephisto2412/datacenter-env) |
 | **PPO Cooling Controller** | [Mephisto2412/clusterenv-ppo-cooling](https://huggingface.co/Mephisto2412/clusterenv-ppo-cooling) |
 | **GRPO Adapter** | [Mephisto2412/clusterenv-grpo-adapter](https://huggingface.co/Mephisto2412/clusterenv-grpo-adapter) |
-| **Training Notebook (Colab)** | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DrishyaShah/datacenter-env/blob/arhaan/finale-v1/training/train_grpo_colab.ipynb) |
+| **Training Notebook (Colab)** | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DrishyaShah/datacenter-env/blob/main/training/train_grpo_colab.ipynb) |
 | **Training Logs (HF Space 50-iter)** | [training_logs_hfspace_50iter.txt](training/training_logs_hfspace_50iter.txt) |
 | **Mini-Blog** | [BLOG.md](BLOG.md) |
-| **GitHub Repo** | [DrishyaShah/datacenter-env](https://github.com/DrishyaShah/datacenter-env/tree/arhaan/finale-v1) |
+| **GitHub Repo** | [DrishyaShah/datacenter-env](https://github.com/DrishyaShah/datacenter-env/tree/main) |
 
 ---
 
@@ -95,6 +95,10 @@ The question the environment poses is whether a 3B-parameter model can learn thi
 ---
 
 ## System Architecture
+
+![ClusterEnv System Architecture](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/main/training/system-architecture.png)
+
+*Team A and Team B submit job requests to the LLM Scheduler (Qwen2.5-3B, GRPO-trained), which issues ACCEPT/REJECT/DEFER decisions per window. Admitted jobs flow through the Economic Layer to the PPO Cooling Controller (SB3, pre-trained), which runs 18 physical simulation steps per window. The OversightMonitor compares stated vs. ground-truth metadata and injects gaming flags into the next window's observation. The window reward (50% throughput + 35% thermal + 15% carbon) closes the GRPO training loop.*
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -914,7 +918,7 @@ Two runs using identical model, hyperparameters, and environment.
 
 ### Run 1 — Colab T4 (30 iterations, re-runnable)
 
-![Training Curves — Colab 30 iter](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves_colab_30iter.png)
+![Training Curves — Colab 30 iter](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/main/training/grpo_training_curves_colab_30iter.png)
 
 *Reward, GRPO loss, JSON parse-failure rate, and gradient norm. Open [`training/train_grpo_colab.ipynb`](training/train_grpo_colab.ipynb) in Colab, select a T4 GPU runtime, and run all cells. Estimated ~25 minutes.*
 
@@ -927,7 +931,7 @@ Two runs using identical model, hyperparameters, and environment.
 
 ### Run 2 — HF Space L40S (50 iterations)
 
-![Training Curves — HF Space 50 iter](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/arhaan/finale-v1/training/grpo_training_curves_hfspace_50iter.png)
+![Training Curves — HF Space 50 iter](https://raw.githubusercontent.com/DrishyaShah/datacenter-env/main/training/grpo_training_curves_hfspace_50iter.png)
 
 *Full per-iteration log: [training_logs_hfspace_50iter.txt](training/training_logs_hfspace_50iter.txt)*
 
