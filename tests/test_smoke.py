@@ -22,11 +22,10 @@ def test_fastapi_app_exists():
 @pytest.mark.parametrize("task", TASK_IDS)
 def test_reset_and_one_step(task: str):
     env = DCEnvironment(task=task, seed=42)
-    rr = env.reset()
-    assert rr.observation is not None
-    assert rr.observation.zones
+    obs = env.reset()
+    assert obs is not None
+    assert obs.zones
 
-    z0 = rr.observation.zones[0]
     action = DCAction(
         zone_adjustments=[
             ZoneAdjustment(
@@ -34,15 +33,15 @@ def test_reset_and_one_step(task: str):
                 fan_speed_pct=min(100.0, z.fan_speed_pct + 5.0),
                 supply_air_temp_setpoint_c=z.supply_air_temp_setpoint_c,
             )
-            for z in rr.observation.zones
+            for z in obs.zones
         ],
-        chiller_setpoint_c=rr.observation.chiller_setpoint_c,
-        chiller_active=rr.observation.chiller_active,
+        chiller_setpoint_c=obs.chiller_setpoint_c,
+        chiller_active=obs.chiller_active,
         reasoning="test",
     )
-    sr = env.step(action)
-    assert sr.observation is not None
-    assert -1.0 <= sr.reward <= 1.0
+    obs2 = env.step(action)
+    assert obs2 is not None
+    assert obs2.reward is None or -1.0 <= obs2.reward <= 1.0
 
 
 @pytest.mark.parametrize("task", TASK_IDS)

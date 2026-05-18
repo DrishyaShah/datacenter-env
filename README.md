@@ -952,6 +952,8 @@ Three observations from the 50-iteration run:
 
 3. **Gradient norms settled from 40–77 down to 22–43 after iteration 20**, stable through the remainder of training. Large early norms reflect rapid format acquisition; the stable later range reflects policy refinement.
 
+The 50-iteration run shows a clear upward trajectory — rewards stabilise in the +0.08 to +0.24 range in the final quarter with zero parse failures. The reward curve had not plateaued by iteration 50, and further training is expected to close the gap to the +0.28 rule-based baseline.
+
 ---
 
 ## How to Run
