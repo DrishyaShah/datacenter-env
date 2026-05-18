@@ -6,6 +6,7 @@ __pycache__/
 *.py[cod]
 *.swp
 *.egg-info/
+*.egg/
 
 # Virtual environment
 .venv/
